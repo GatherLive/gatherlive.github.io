@@ -161,7 +161,7 @@ function settingsFrom(raw = {}, questions = []) {
     }
     if (assigned.size !== questions.length) fail('INVALID_SETTINGS', 'Assign each question to exactly one round.');
   }
-  return { shuffleQuestions: boolean('shuffleQuestions', false), shuffleOptions: boolean('shuffleOptions', false), scoring, allowLateJoin: boolean('allowLateJoin', true), showLeaderboard: boolean('showLeaderboard', true), participantLimit, questionDelay, roundsEnabled, rounds, ...chatSettings(raw) };
+  return { shuffleQuestions: boolean('shuffleQuestions', false), shuffleOptions: boolean('shuffleOptions', false), scoring, allowLateJoin: boolean('allowLateJoin', true), showLeaderboard: boolean('showLeaderboard', true), showQuestionType: boolean('showQuestionType', false), participantLimit, questionDelay, roundsEnabled, rounds, ...chatSettings(raw) };
 }
 
 export class RoomEngine {
@@ -538,6 +538,11 @@ export class RoomEngine {
     // Public live updates stay bounded even with large rooms; reports retain every standing.
     const roundResults = this.roundResults.map((round) => ({ ...round, leaderboard: forHost ? round.leaderboard : this.settings.showLeaderboard ? round.leaderboard.slice(0, 10) : [] }));
     const result = { code: this.code, title: this.quiz.title, phase: this.phase, role: forHost ? 'host' : playerId ? 'player' : 'spectator', questionIndex: this.questionIndex, totalQuestions: this.quiz.questions.length, round: this._round(), roundResults: clone(roundResults), question, deadline: this.deadline, serverNow: this.now(), players, participantCount: this.players.size, leaderboard: this.settings.showLeaderboard || forHost || this.phase === 'finished' ? clone(forHost ? this._leaderboard() : this._leaderboard().slice(0, 10)) : [], answerCount: this._answerCount, settings: clone(this.settings), locked: this.locked, winners: clone(this.winners) };
+    // A countdown hint describes only the format. Never include content, IDs,
+    // option counts, image URLs, or decryption keys before the question opens.
+    if (this.phase === 'countdown' && this.settings.showQuestionType && q) {
+      result.questionHint = { type: q.type, hasImage: !!(q.image || q.options?.some(option => option.image)) };
+    }
     const me = this._me(playerId);
     if (me) result.me = me;
     if(conversation){result.chat=this.conversation.metadata(this.phase);result.announcement=this.conversation.visibleAnnouncement(this.phase);}
