@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" fill="#d2c6f3" role="img" aria-label="Gather logo">
+  <g transform="rotate(-8 20 20)">
+    <rect x="10.5" y="10.5" width="8" height="8" rx="2"/>
+    <path d="M25.5 10.5a4 4 0 0 1 4 4v2.4a1.6 1.6 0 0 1-1.6 1.6h-4.8a1.6 1.6 0 0 1-1.6-1.6v-2.4a4 4 0 0 1 4-4Z"/>
+    <path d="M12.1 21.5h4.8a1.6 1.6 0 0 1 1.6 1.6v2.4a4 4 0 0 1-8 0v-2.4a1.6 1.6 0 0 1 1.6-1.6Z"/>
+    <rect x="21.5" y="21.5" width="8" height="8" rx="2"/>
+  </g>
+</svg>

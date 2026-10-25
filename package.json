@@ -1,0 +1,24 @@
+{
+  "name": "gather-quiz",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Open-source live quizzes with rounds and optional rewards.",
+  "scripts": {
+    "dev": "node scripts/dev-server.mjs",
+    "check": "node scripts/check.mjs",
+    "deploy:worker": "node scripts/deploy-worker.mjs",
+    "build": "node scripts/build.mjs",
+    "privacy": "node scripts/privacy-check.mjs"
+  },
+  "dependencies": {
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "latest"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "AGPL-3.0-only"
+}

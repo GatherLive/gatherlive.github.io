@@ -1,0 +1,47 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+.env
+.env.*
+!.env.example
+.local/
+__pycache__/
+playwright-report/
+test-results/
+*.log
+
+# Local credentials, generated bindings, exports, and preview artifacts
+worker/env.d.ts
+*.pem
+*.key
+*.p12
+*.sqlite
+*.sqlite3
+*.db
+*.har
+.env.local
+
+# Private local maintenance files; never publish these.
+/tests/
+/supabase/
+/scripts/test-*.mjs
+
+# Local repository notes and optional archive helper
+/AGENTS.md
+/agent.md
+/SECURITY.md
+/VALIDATION.md
+/scripts/export-source.mjs
+
+# Operator-only chat invitations
+chat-access-codes*.txt
+chat-codes*.txt
+
+# Local operator shortcuts
+/run/publish.mjs
+/run/chat-codes.mjs
+/run/README.md
+
+# Local review screenshots
+/Screenshot_*.png
