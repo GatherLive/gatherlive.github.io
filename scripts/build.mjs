@@ -34,10 +34,19 @@ await writeFile(resolve(output,'config.js'),`window.GATHER_CONFIG = ${JSON.strin
 const assets=(await readdir(output)).filter(name=>/\.(?:js|css|html)$/.test(name)).sort();
 const digest=createHash('sha256');
 for(const name of assets)digest.update(name).update(await readFile(resolve(output,name)));
+// A data or flag update must invalidate the lazy learning library as well.
+async function hashLearning(directory,prefix='learn-data'){
+ for(const entry of (await readdir(directory,{withFileTypes:true})).sort((a,b)=>a.name.localeCompare(b.name))){
+  const name=prefix+'/'+entry.name,path=resolve(directory,entry.name);
+  if(entry.isDirectory())await hashLearning(path,name);
+  else if(entry.isFile())digest.update(name).update(await readFile(path));
+ }
+}
+await hashLearning(resolve(output,'learn-data'));
 const revision=digest.digest('hex').slice(0,16);
 for(const name of assets){
  let source=await readFile(resolve(output,name),'utf8');
- if(name.endsWith('.js'))source=source.replace(/(['"])(\.\/[A-Za-z0-9_-]+\.js)\1/g,(_match,quote,path)=>quote+path+'?v='+revision+quote);
+ if(name.endsWith('.js'))source=source.replace(/(['"])(\.\/[A-Za-z0-9_./-]+\.(?:js|css|json))\1/g,(_match,quote,path)=>quote+path+'?v='+revision+quote);
  if(name==='index.html')source=source.replace(/((?:src|href)="\.\/[^"?]+\.(?:js|css))"/g,'$1?v='+revision+'"').replace('</head>',`  <meta name="gather-release" content="${revision}">\n</head>`);
  await writeFile(resolve(output,name),source);
 }

@@ -12,7 +12,7 @@ const uid = () => {
   return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
 };
 // Material Symbols Rounded by Google, Apache-2.0. See material-symbols.LICENSE.txt.
-const materialIcons = {"quiz":{"url":"https://raw.githubusercontent.com/google/material-design-icons/master/symbols/web/edit_square/materialsymbolsrounded/edit_square_24px.svg","viewBox":"0 -960 960 960","paths":["M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h261q20 0 30 12.5t10 27.5q0 15-10.5 27.5T460-760H200v560h560v-261q0-20 12.5-30t27.5-10q15 0 27.5 10t12.5 30v261q0 33-23.5 56.5T760-120H200Zm280-360Zm-120 80v-97q0-16 6-30.5t17-25.5l344-344q12-12 27-18t30-6q16 0 30.5 6t26.5 18l56 57q11 12 17 26.5t6 29.5q0 15-5.5 29.5T897-728L553-384q-11 11-25.5 17.5T497-360h-97q-17 0-28.5-11.5T360-400Zm481-384-56-56 56 56ZM440-440h56l232-232-28-28-29-28-231 231v57Zm260-260-29-28 29 28 28 28-28-28Z"]},"chat":{"url":"https://raw.githubusercontent.com/google/material-design-icons/master/symbols/web/chat_bubble/materialsymbolsrounded/chat_bubble_fill1_24px.svg","viewBox":"0 -960 960 960","paths":["m240-240-92 92q-19 19-43.5 8.5T80-177v-623q0-33 23.5-56.5T160-880h640q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H240Z"]},"send":{"url":"https://raw.githubusercontent.com/google/material-design-icons/master/symbols/web/send/materialsymbolsrounded/send_fill1_24px.svg","viewBox":"0 -960 960 960","paths":["M176-183q-20 8-38-3.5T120-220v-180l320-80-320-80v-180q0-22 18-33.5t38-3.5l616 260q25 11 25 37t-25 37L176-183Z"]},"reply":{"url":"https://raw.githubusercontent.com/google/material-design-icons/master/symbols/web/reply/materialsymbolsrounded/reply_24px.svg","viewBox":"0 -960 960 960","paths":["m273-480 116 116q12 12 11.5 28T388-308q-12 11-28 11.5T332-308L148-492q-12-12-12-28t12-28l184-184q11-11 27.5-11t28.5 11q12 12 12 28.5T388-675L273-560h367q83 0 141.5 58.5T840-360v120q0 17-11.5 28.5T800-200q-17 0-28.5-11.5T760-240v-120q0-50-35-85t-85-35H273Z"]}};
+const materialIcons = {"quiz":{"url":"https://raw.githubusercontent.com/google/material-design-icons/master/symbols/web/edit_square/materialsymbolsrounded/edit_square_24px.svg","viewBox":"0 -960 960 960","paths":["M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h261q20 0 30 12.5t10 27.5q0 15-10.5 27.5T460-760H200v560h560v-261q0-20 12.5-30t27.5-10q15 0 27.5 10t12.5 30v261q0 33-23.5 56.5T760-120H200Zm280-360Zm-120 80v-97q0-16 6-30.5t17-25.5l344-344q12-12 27-18t30-6q16 0 30.5 6t26.5 18l56 57q11 12 17 26.5t6 29.5q0 15-5.5 29.5T897-728L553-384q-11 11-25.5 17.5T497-360h-97q-17 0-28.5-11.5T360-400Zm481-384-56-56 56 56ZM440-440h56l232-232-28-28-29-28-231 231v57Zm260-260-29-28 29 28 28 28-28-28Z"]},"chat":{"url":"https://raw.githubusercontent.com/google/material-design-icons/master/symbols/web/chat_bubble/materialsymbolsrounded/chat_bubble_fill1_24px.svg","viewBox":"0 -960 960 960","paths":["m240-240-92 92q-19 19-43.5 8.5T80-177v-623q0-33 23.5-56.5T160-880h640q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H240Z"]},"send":{"url":"https://raw.githubusercontent.com/google/material-design-icons/master/symbols/web/send/materialsymbolsrounded/send_fill1_24px.svg","viewBox":"0 -960 960 960","paths":["M176-183q-20 8-38-3.5T120-220v-180l320-80-320-80v-180q0-22 18-33.5t38-3.5l616 260q25 11 25 37t-25 37L176-183Z"]},"reply":{"url":"https://raw.githubusercontent.com/google/material-design-icons/master/symbols/web/reply/materialsymbolsrounded/reply_24px.svg","viewBox":"0 -960 960 960","paths":["m273-480 116 116q12 12 11.5 28T388-308q-12 11-28 11.5T332-308L148-492q-12-12-12-28t12-28l184-184q11-11 27.5-11t28.5 11q12 12 12 28.5T388-675L273-560h367q83 0 141.5 58.5T840-360v120q0 17-11.5 28.5T800-200q-17 0-28.5-11.5T760-240v-120q0-50-35-85t-85-35H273Z"]},"learn":{"url":"https://raw.githubusercontent.com/google/material-design-icons/master/symbols/web/auto_stories/materialsymbolsrounded/auto_stories_24px.svg","viewBox":"0 -960 960 960","paths":["M480-178q-11 0-21.5-3t-19.5-8q-41-25-86-38t-93-13q-42 0-82.5 11T100-198q-21 11-40.5-1T40-234v-482q0-11 5.5-21T62-752q46-24 96-36t102-12q58 0 113.5 15T480-740v484q51-32 107-48t113-16q36 0 70.5 6t69.5 18v-480q15 5 29.5 10.5T898-752q11 5 16.5 15t5.5 21v482q0 23-19.5 35t-40.5 1q-37-20-77.5-31T700-240q-48 0-93 13t-86 38q-9 5-19.5 8t-21.5 3Zm113-212q-10 9-21.5 3.5T560-405v-327q0-4 1.5-7.5t4.5-6.5l160-160q10-10 22-5t12 19v343q0 5-2 8.5t-5 6.5L593-390Zm-193 95v-396q-33-14-68.5-21.5T260-720q-37 0-72 7t-68 21v397q35-13 69.5-19t70.5-6q36 0 70.5 6t69.5 19Zm0 0v-396 396Z"]},"flag":{"url":"https://raw.githubusercontent.com/google/material-design-icons/master/symbols/web/flag/materialsymbolsrounded/flag_24px.svg","viewBox":"0 -960 960 960","paths":["M280-400v240q0 17-11.5 28.5T240-120q-17 0-28.5-11.5T200-160v-600q0-17 11.5-28.5T240-800h287q14 0 25 9t14 23l10 48h184q17 0 28.5 11.5T800-680v320q0 17-11.5 28.5T760-320H553q-14 0-25-9t-14-23l-10-48H280Zm306 0h134v-240H543q-14 0-25-9t-14-23l-10-48H280v240h257q14 0 25 9t14 23l10 48Zm-86-160Z"]},"map":{"url":"https://raw.githubusercontent.com/google/material-design-icons/master/symbols/web/map/materialsymbolsrounded/map_24px.svg","viewBox":"0 -960 960 960","paths":["m574-129-214-75-186 72q-10 4-19.5 2.5T137-136q-8-5-12.5-13.5T120-169v-561q0-13 7.5-23t20.5-15l186-63q6-2 12.5-3t13.5-1q7 0 13.5 1t12.5 3l214 75 186-72q10-4 19.5-2.5T823-824q8 5 12.5 13.5T840-791v561q0 13-7.5 23T812-192l-186 63q-6 2-12.5 3t-13.5 1q-7 0-13.5-1t-12.5-3Zm-14-89v-468l-160-56v468l160 56Zm80 0 120-40v-474l-120 46v468Zm-440-10 120-46v-468l-120 40v474Zm440-458v468-468Zm-320-56v468-468Z"]}};
 const icon = (name, size = 20) => {
   const material=materialIcons[name];
   if(material)return `<svg width="${size}" height="${size}" viewBox="${material.viewBox}" fill="currentColor" aria-hidden="true">${material.paths.map(path=>`<path d="${path}"/>`).join('')}</svg>`;
@@ -46,7 +46,7 @@ function closeModal() { $('#modal-root').innerHTML = ''; S.previousFocus?.focus(
 async function request(url, options = {}) {
   const response = await fetch(url, options); const body = await response.text(); let data;
   try { data = body ? JSON.parse(body) : null; } catch { data = null; }
-  if (!response.ok) throw new Error(data?.message || data?.msg || data?.error_description || data?.error || `Request failed (${response.status}).`);
+  if (!response.ok) {const error=new Error(data?.message || data?.msg || data?.error_description || data?.error || `Request failed (${response.status}).`);error.status=response.status;if(data?.progress)error.progress=data.progress;throw error;}
   return data;
 }
 async function authRequest(path, body, method = 'POST', token) {
@@ -54,7 +54,12 @@ async function authRequest(path, body, method = 'POST', token) {
   return request(`${S.config.supabaseUrl}/auth/v1/${path}`, {method,headers:{apikey:S.config.supabaseKey,'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},...(body?{body:JSON.stringify(body)}:{})});
 }
 function saveSession(session) {
+  const previousUser=S.session?.user?.id||S.session?.id||'';
   S.session = session; if (session) localStorage.setItem('gather.session',JSON.stringify(session)); else localStorage.removeItem('gather.session'); scheduleRefresh();
+  if(previousUser!==(S.session?.user?.id||S.session?.id||'')&&S.learning){
+    const learning=S.learning;
+    void Promise.resolve().then(()=>S.learning===learning?learning.sessionChanged():null).catch(()=>{});
+  }
 }
 function scheduleRefresh() {
   clearTimeout(sessionRefresh); if (!S.session?.refresh_token) return;
@@ -76,8 +81,38 @@ async function db(path, options = {}) {
 async function backend(path, body, method = 'POST', auth = true) {
   return request(apiURL(path),{method,headers:{'Content-Type':'application/json',...(auth?{Authorization:`Bearer ${await getToken()}`}:{})},...(body?{body:JSON.stringify(body)}:{})});
 }
+function learningReturn() {
+  try{const stored=JSON.parse(sessionStorage.getItem('gather.learn.return')||'null');sessionStorage.removeItem('gather.learn.return');if(stored&&Date.now()-stored.at<15*60*1000&&typeof stored.hash==='string'&&/^#learn(?:\/[a-z-]+)*$/.test(stored.hash))return stored.hash;}catch{}
+  return '#dashboard';
+}
+function forgetLearningAccount(userId) {
+  const prefix=`gather.learn.v1.user.${userId}`;
+  for(const key of Object.keys(localStorage))if(key===prefix||key.startsWith(prefix+'.'))localStorage.removeItem(key);
+}
+async function learningBackend(body,method='POST') {
+  const owner=activeUser()?.id;
+  if(!owner)throw new Error('Please sign in to sync your learning progress.');
+  const token=await getToken();
+  if(activeUser()?.id!==owner)throw new Error('Your account changed. Please retry learning sync.');
+  const result=await request(apiURL('/api/account/learning'),{method,headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},...(body?{body:JSON.stringify(body)}:{})});
+  return result.progress;
+}
+async function showLearning(parts,version) {
+  const {createLearning}=await import('./learn.js');if(version!==routeVersion)return;
+  if(!S.learning){
+    const instance=createLearning({
+      shell:html=>{if(S.learning===instance&&(location.hash==='#learn'||location.hash.startsWith('#learn/')))shell(html);},
+      icon,session:()=>S.session,notify:toast,
+      signIn:(returnHash='#learn')=>{const hash=/^#learn(?:\/[a-z-]+)*$/.test(returnHash)?returnHash:'#learn';sessionStorage.setItem('gather.learn.return',JSON.stringify({hash,at:Date.now()}));S.authMode='login';S.authMessage='';location.hash='#host';},
+      loadCloud:()=>learningBackend(null,'GET'),
+      saveCloud:progress=>learningBackend({progress}),
+      resetCloud:()=>learningBackend(null,'DELETE')
+    });S.learning=instance;
+  }
+  await S.learning.route(parts);
+}
 function home() {
-  shell(`<main class="home"><div class="home-content"><h1>Live quizzes<span>.</span></h1><div class="home-actions"><a href="#host" class="action-card primary"><div class="action-icon">${icon('quiz',36)}</div><span class="arrow">↗</span><h2>Host quiz</h2></a><a href="#join" class="action-card"><div class="action-icon" style="color:var(--green)">${icon('users',36)}</div><span class="arrow">↗</span><h2>Join quiz</h2></a></div></div></main>`);
+  shell(`<main class="home"><div class="home-content"><h1>Live quizzes<span>.</span></h1><div class="home-actions"><a href="#host" class="action-card primary"><div class="action-icon">${icon('quiz',36)}</div><span class="arrow">↗</span><h2>Host quiz</h2></a><a href="#join" class="action-card"><div class="action-icon" style="color:var(--green)">${icon('users',36)}</div><span class="arrow">↗</span><h2>Join quiz</h2></a><a href="#learn" class="action-card learn-home-card"><div class="action-icon">${icon('learn',32)}</div><h2>Learn <span class="learn-beta">beta</span></h2><span class="arrow">↗</span></a></div></div></main>`);
 }
 function authView() {
   const signup=S.authMode==='signup',recover=S.authMode==='recover',reset=S.authMode==='reset';
@@ -621,7 +656,7 @@ const actions = {
   'report-view':el=>{const report=S.reports.find(r=>r.id===el.dataset.id),players=report.results?.leaderboard||report.results?.players||(Array.isArray(report.results)?report.results:[]);modal(report.quiz_title||'Quiz results',`<p>${dateLabel(report.created_at)} · Code ${esc(report.room_code)}</p><div class="report-detail">${report.results?.roundResults?.length?roundHistory(report.results.roundResults):leaderboard(players)}</div>`,`<button class="btn primary" data-action="report-csv" data-id="${report.id}">Download CSV</button>`);},
   'sign-out':async()=>{try{await authRequest('logout',null,'POST',await getToken());}catch{}saveSession(null);S.quizzes=[];S.reports=[];S.draft=null;S.dirty=false;location.hash='#';home();toast('Signed out.');},
   'delete-account':()=>modal('Delete your account?',`<p>This permanently removes your account, every quiz, your uploaded images and all saved results. This can’t be undone.</p><div class="field"><label for="delete-confirm">Type DELETE to continue</label><input id="delete-confirm" autocomplete="off" placeholder="DELETE"></div><div id="delete-error" role="alert"></div>`,'<button class="btn danger" id="delete-account-button" data-action="confirm-delete-account" disabled>Permanently delete</button>'),
-  'confirm-delete-account':async()=>{if($('#delete-confirm')?.value!=='DELETE')return;await backend('/api/account',null,'DELETE');closeModal();saveSession(null);S.draft=null;S.quizzes=[];S.reports=[];S.dirty=false;location.hash='#';home();toast('Your account and data have been deleted.');}
+  'confirm-delete-account':async()=>{if($('#delete-confirm')?.value!=='DELETE')return;const deletedUser=activeUser()?.id;await backend('/api/account',null,'DELETE');if(deletedUser)forgetLearningAccount(deletedUser);closeModal();saveSession(null);S.draft=null;S.quizzes=[];S.reports=[];S.dirty=false;location.hash='#';home();toast('Your account and data have been deleted.');}
 };
 document.addEventListener('click',async event=>{
   if(event.target.classList.contains('modal-backdrop')){closeModal();return;}
@@ -684,7 +719,7 @@ document.addEventListener('submit',async event=>{
       else if(S.authMode==='reset'){await authRequest('user',{password},'PUT',await getToken());S.authMode='login';toast('New password saved.');location.hash='#dashboard';}
       else{
         const signup=S.authMode==='signup';const data=await authRequest(signup?`signup?redirect_to=${encodeURIComponent(location.origin+location.pathname)}`:'token?grant_type=password',{email,password});
-        if(data.access_token){saveSession(data);S.authMessage='';location.hash='#dashboard';}else{S.authMessage='Check your email to confirm your account, then sign in here.';S.authMode='login';authView();}
+        if(data.access_token){saveSession(data);S.authMessage='';location.hash=learningReturn();}else{S.authMessage='Check your email to confirm your account, then sign in here.';S.authMode='login';authView();}
       }
     } else if(form.id==='join-form'){
       const code=$('#join-code').value,name=$('#join-name').value.trim();if(!/^\d{6}$/.test(code)||!name)throw new Error('Enter a six digit code and your name.');
@@ -711,7 +746,10 @@ let routeVersion=0;
 async function route() {
   const version=++routeVersion,raw=location.hash.slice(1),[path,...parts]=raw.split('/');
   closeModal();window.scrollTo(0,0);
-  if(path!=='room'&&S.ws){disconnectRoom();S.roomState=null;}
+  if(path!=='learn'&&S.learning){S.learning.destroy();S.learning=null;}
+  if(!['learn','host','reset'].includes(path))try{sessionStorage.removeItem('gather.learn.return');}catch{}
+  if(path!=='room'&&(S.ws||(path==='learn'&&S.room))){disconnectRoom();S.roomState=null;if(path==='learn')S.room=null;}
+  if(path==='learn'){await showLearning(parts,version);return;}
   if(path==='host'||path==='dashboard'||path==='account'||path==='edit'){
     if(!activeUser()){S.authMode='login';authView();return;}
     if(path==='host'||path==='dashboard'){await dashboard();return;}
@@ -754,7 +792,7 @@ async function boot() {
     if(hash.get('access_token')){
       const token=hash.get('access_token'),user=await authRequest('user',null,'GET',token);
       saveSession({access_token:token,refresh_token:hash.get('refresh_token'),expires_at:Math.floor(Date.now()/1000)+Number(hash.get('expires_in')||3600),user});
-      const recovery=hash.get('type')==='recovery';history.replaceState(null,'',`${location.pathname}${location.search}${recovery?'#reset':'#dashboard'}`);
+      const recovery=hash.get('type')==='recovery';history.replaceState(null,'',`${location.pathname}${location.search}${recovery?'#reset':learningReturn()}`);
     }
     if(S.session){try{if((S.session.expires_at||0)*1000<Date.now()+30000)await refreshToken();else scheduleRefresh();}catch{}}
     await route();

@@ -1,3 +1,4 @@
+import {LEARNING_MAX_BYTES} from './learning-progress.js';
 // Shared HTTP API. The same handlers run locally and in Cloudflare Workers.
 export class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -127,6 +128,10 @@ export async function handleApi(request, env, rooms) {
         payload.quiz_id=null;rows=await save();
       }
       response=json({report:rows?.[0] || {id:report.id}});
+    } else if (pathname === '/api/account/learning' && ['GET','POST','DELETE'].includes(request.method)) {
+      const user=await authenticate(env,bearer(request));
+      const body=request.method==='POST'?await readJson(request,LEARNING_MAX_BYTES+1024):null;
+      response=json({progress:await rooms.learning(user.id,request.method,body?.progress)});
     } else if (pathname === '/api/account/chat' && ['GET','POST'].includes(request.method)) {
       const user=await authenticate(env,bearer(request));
       if(request.method==='POST'){
@@ -145,6 +150,6 @@ export async function handleApi(request, env, rooms) {
   } catch (error) {
     const status=error.status || (error.name === 'EngineError' ? 400 : 500);
     if (status >= 500) console.error(JSON.stringify({event:'api_error',status,name:error.name}));
-    return responseHeaders(request,env,json({error:status >= 500 && !error.status ? 'Something went wrong. Please retry.' : error.message},status));
+    return responseHeaders(request,env,json({error:status >= 500 && !error.status ? 'Something went wrong. Please retry.' : error.message,...(status===409&&error.progress?{progress:error.progress}:{})},status));
   }
 }

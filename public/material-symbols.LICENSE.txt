@@ -1,7 +1,7 @@
 Material Symbols Rounded by Google
 https://github.com/google/material-design-icons
 
-Icons used: edit_square (outlined), chat_bubble (filled), send (filled), reply (outlined), 24px.
+Icons used: edit_square (outlined), chat_bubble (filled), send (filled), reply (outlined), auto_stories, flag, map (outlined), 24px.
 SVG path data is unmodified.
 
 

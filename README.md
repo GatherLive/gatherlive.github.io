@@ -12,7 +12,8 @@ Free, open-source live quizzes for everyone.
 - Host announcements and invitation-only chat with replies and emoji reactions.
 - Announcements and chat stay hidden during countdowns and questions.
 - Copy an AI quiz prompt, import JSON, and delete your account anytime.
+- Learn flags, capitals, and world geography with practice, tests, and review.
 
-No ads, analytics trackers, or data sales. Accounts, quizzes, and results are stored only to run the service. One invitation code unlocks chat for a host account and its future quizzes. Chat and announcements are deleted when the quiz ends. Ended rooms and unsaved results clear after 15 minutes; abandoned rooms expire after 24 hours.
+No ads, analytics trackers, or data sales. Accounts, quizzes, and results are stored only to run the service. Learning progress stays in your browser unless you enable account sync. One invitation code unlocks chat for a host account and its future quizzes. Chat and announcements are deleted when the quiz ends. Ended rooms and unsaved results clear after 15 minutes; abandoned rooms expire after 24 hours.
 
-Licensed under [AGPL-3.0](LICENSE).
+Licensed under [AGPL-3.0](LICENSE). [Learning data and asset credits](public/learn-data/README.md).

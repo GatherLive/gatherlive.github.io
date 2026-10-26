@@ -1,10 +1,11 @@
 import http from 'node:http';
-import {readFile,writeFile,appendFile,rename,mkdir,readdir,unlink} from 'node:fs/promises';
+import {readFile,writeFile,appendFile,rename,mkdir,readdir,unlink,rmdir} from 'node:fs/promises';
 import {resolve,extname,dirname,join,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {WebSocketServer} from 'ws';
 import {loadConfig} from './config.mjs';
 import {RoomEngine} from '../shared/engine.js';
+import {emptyLearningProgress,mergeLearningProgress,resetLearningProgress} from '../shared/learning-progress.js';
 import {RoomMedia} from '../shared/media.js';
 import {RoomConversation,CONVERSATION_COMMANDS} from '../shared/conversation.js';
 import {chatCodeRequest,chatOwnerKey,redeemChatCode,MemoryChatCodes} from '../shared/chat-access.js';
@@ -105,7 +106,34 @@ async function purge(code){
   for(const suffix of ROOM_FILES)try{await unlink(join(stateDir,`${code}${suffix}`));}catch(error){if(error.code!=='ENOENT')throw error;}
 }
 const deletingOwners=new Map();
+const learningQueues=new Map();
+async function learningPath(ownerId){
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(ownerId));
+  return join(stateDir,'.learning',Buffer.from(digest).toString('hex')+'.json');
+}
+async function withLearning(ownerId,method,progress){
+  const path=await learningPath(ownerId),previous=learningQueues.get(path)||Promise.resolve();
+  const task=previous.then(async()=>{
+    if(method==='PURGE'){
+      for(const suffix of ['', '.tmp'])try{await unlink(path+suffix);}catch(error){if(error.code!=='ENOENT')throw error;}
+      try{await rmdir(dirname(path));}catch(error){if(!['ENOENT','ENOTEMPTY'].includes(error.code))throw error;}
+      return;
+    }
+    if((deletingOwners.get(ownerId)||0)>Date.now())throw new HttpError(409,'Account deletion is in progress.');
+    let current=emptyLearningProgress(),saved;
+    try{saved=await readFile(path,'utf8');current=JSON.parse(saved);}catch(error){if(error.code!=='ENOENT')throw error;}
+    const next=method==='POST'?mergeLearningProgress(current,progress):method==='DELETE'?resetLearningProgress(current):current;
+    const data=JSON.stringify(next);
+    if(method!=='GET'&&data!==saved){
+      await mkdir(dirname(path),{recursive:true,mode:0o700});await writeFile(path+'.tmp',data,{mode:0o600});await rename(path+'.tmp',path);
+    }
+    return next;
+  });
+  const queued=task.catch(()=>{});learningQueues.set(path,queued);
+  try{return await task;}finally{if(learningQueues.get(path)===queued)learningQueues.delete(path);}
+}
 const adapter={
+ async learning(ownerId,method,progress){return withLearning(ownerId,method,progress);},
  async chatAccess(ownerId){return accountChatAccess(ownerId);},
  async unlockChat(ownerId,code){
   if((deletingOwners.get(ownerId)||0)>Date.now())throw new HttpError(409,'Account deletion is in progress.');
@@ -138,7 +166,7 @@ const adapter={
   });
  },
  async report(code,ownerId){const r=rooms.get(code);if(!r||r.closed||roomExpires(r)<=Date.now())throw new HttpError(404,'Room not found.');if(r.meta.ownerId!==ownerId)throw new HttpError(403,'This room belongs to another host.');if(r.engine.phase!=='finished')throw new HttpError(409,'Finish the quiz first.');return {id:r.meta.reportId,quizId:r.meta.quizId,title:r.meta.title,results:r.engine.report()};},
- async purgeOwner(ownerId){deletingOwners.set(ownerId,Date.now()+120000);for(const [code,r] of rooms)if(r.meta.ownerId===ownerId)await serial(r,()=>purge(code));if(env.CHAT_CODE_PEPPER){const key=await chatOwnerKey(env,ownerId);if(accessStore.account(key)||accessStore.attempt(key))await updateAccess(()=>accessStore.revoke(key));}}
+ async purgeOwner(ownerId){deletingOwners.set(ownerId,Date.now()+120000);await withLearning(ownerId,'PURGE');for(const [code,r] of rooms)if(r.meta.ownerId===ownerId)await serial(r,()=>purge(code));if(env.CHAT_CODE_PEPPER){const key=await chatOwnerKey(env,ownerId);if(accessStore.account(key)||accessStore.attempt(key))await updateAccess(()=>accessStore.revoke(key));}}
 };
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.webp':'image/webp','.ico':'image/x-icon','.json':'application/json','.txt':'text/plain'};
 const csp="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.workers.dev wss://*.workers.dev ws://localhost:* ws://127.0.0.1:*; font-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'";

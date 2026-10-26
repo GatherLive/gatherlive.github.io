@@ -1,5 +1,6 @@
 import {DurableObject} from 'cloudflare:workers';
 import {RoomEngine} from '../shared/engine.js';
+import {emptyLearningProgress,mergeLearningProgress,resetLearningProgress} from '../shared/learning-progress.js';
 import {RoomMedia} from '../shared/media.js';
 import {RoomConversation,CONVERSATION_COMMANDS} from '../shared/conversation.js';
 import {chatCodeRequest,chatOwnerKey,redeemChatCode,CHAT_ACCESS_REGISTRY} from '../shared/chat-access.js';
@@ -313,6 +314,22 @@ export class GiveawayRoom extends DurableObject {
 // Owner index is separate from live games, used only for listing and account erasure.
 export class AccountRooms extends DurableObject {
   constructor(ctx,env){super(ctx,env);this.ctx=ctx;this.accessEnv=env;ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS rooms(code TEXT PRIMARY KEY,expires INTEGER NOT NULL)');ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS closing(id INTEGER PRIMARY KEY,until_ms INTEGER NOT NULL)');}
+  learning(method,progress){
+    try{
+      const sql=this.ctx.storage.sql;
+      const closing=sql.exec('SELECT until_ms FROM closing WHERE id=1').toArray()[0];
+      if(closing?.until_ms>Date.now())throw new HttpError(409,'Account deletion is in progress.');
+      sql.exec('CREATE TABLE IF NOT EXISTS learning_progress(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL)');
+      return this.ctx.storage.transactionSync(()=>{
+        const saved=sql.exec('SELECT data FROM learning_progress WHERE id=1').toArray()[0];
+        const current=saved?JSON.parse(saved.data):emptyLearningProgress();
+        const next=method==='POST'?mergeLearningProgress(current,progress):method==='DELETE'?resetLearningProgress(current):current;
+        const data=JSON.stringify(next);
+        if(method!=='GET'&&data!==saved?.data)sql.exec('INSERT OR REPLACE INTO learning_progress(id,data) VALUES(1,?)',data);
+        return {ok:true,progress:next};
+      });
+    }catch(error){return {...rpcFailure(error),...(error.status===409&&error.progress?{progress:error.progress}:{})};}
+  }
   chatAccessStore(){
       const sql=this.ctx.storage.sql;
       sql.exec('CREATE TABLE IF NOT EXISTS chat_codes(digest TEXT PRIMARY KEY,owner_key TEXT NOT NULL)');
@@ -353,7 +370,7 @@ export class AccountRooms extends DurableObject {
   list(){this.ctx.storage.sql.exec('DELETE FROM rooms WHERE expires < ?',Date.now());return this.ctx.storage.sql.exec('SELECT code,expires FROM rooms').toArray();}
   async beginDelete(){const until=Date.now()+120000;this.ctx.storage.sql.exec('INSERT OR REPLACE INTO closing(id,until_ms) VALUES(1,?)',until);await this.ctx.storage.setAlarm(until);return this.list();}
   remove(code,expires){this.ctx.storage.sql.exec('DELETE FROM rooms WHERE code=? AND expires=?',code,expires);}
-  clear(){this.ctx.storage.sql.exec('DELETE FROM rooms');}
+  clear(){this.ctx.storage.sql.exec('DELETE FROM rooms');this.ctx.storage.sql.exec('DROP TABLE IF EXISTS learning_progress');}
   alarm(){this.ctx.storage.sql.exec('DELETE FROM closing WHERE until_ms <= ?',Date.now());}
 }
 function rpcFailure(error){
@@ -362,6 +379,11 @@ function rpcFailure(error){
 }
 function unwrapRpc(result,key){if(!result?.ok)throw new HttpError(result?.status || 502,result?.message || 'The room service is unavailable.');return result[key];}
 function roomAdapter(env){return {
+  async learning(ownerId,method,progress){
+    const result=await env.ACCOUNTS.getByName(ownerId).learning(method,progress);
+    if(!result?.ok){const error=new HttpError(result?.status||503,result?.message||'Learning sync is temporarily unavailable.');if(result?.progress)error.progress=result.progress;throw error;}
+    return result.progress;
+  },
   async chatAccess(ownerId){
     if(!env.CHAT_CODE_PEPPER)return false;
     const access=await env.ACCOUNTS.getByName(CHAT_ACCESS_REGISTRY).getChatAccess(await chatOwnerKey(env,ownerId));
