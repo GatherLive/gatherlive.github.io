@@ -92,23 +92,44 @@ async function dashboard() {
   catch(error) { if(!S.session){location.hash='#host';return;} shell(`<main class="page"><h1 style="font-size:32px">Your quiz space</h1><div class="error-note">${esc(error.message)}</div><button class="btn" data-action="reload-dashboard">Try again</button></main>`); }
 }
 async function loadOpenRooms(update=true) {
-  try{S.openRooms=(await backend('/api/rooms',null,'GET')).rooms;S.roomsError='';}
+  try{const data=await backend('/api/rooms',null,'GET');S.openRooms=(Array.isArray(data?.rooms)?data.rooms:[]).filter(isOpenRoom);S.roomsError='';}
   catch(error){S.openRooms=[];S.roomsError=error.message;}
   if(update&&$('#open-rooms'))$('#open-rooms').innerHTML=openRoomCards();
+  if($('#open-room-count'))$('#open-room-count').textContent=S.openRooms.length;
 }
+function isOpenRoom(room) { return room&&room.phase!=='finished'&&room.phase!=='closed'; }
 function openRoomCards() {
   if(S.roomsError)return `<div class="room-list-notice"><span>Rooms unavailable</span><button class="quiet-button" data-action="refresh-rooms">Try again</button></div>`;
-  if(!S.openRooms.length)return '';
-  const phases={lobby:'Waiting',countdown:'Starting',question:'In progress',reveal:'Between questions',round_results:'Round results',finished:'Results'};
-  return `<section class="open-rooms" aria-labelledby="open-rooms-title"><div class="row between"><h2 id="open-rooms-title">Open rooms</h2><button class="quiet-button" data-action="refresh-rooms" aria-label="Refresh rooms">Refresh</button></div><div class="open-room-list">${S.openRooms.map(room=>`<article class="open-room card"><div class="open-room-info"><h3>${esc(room.title)}</h3><p><b>${esc(room.code)}</b><span>${esc(phases[room.phase]||'Open')}</span><span>${room.participants} player${room.participants===1?'':'s'}</span></p></div><div class="open-room-actions"><button class="btn small primary" data-action="rejoin-room" data-code="${esc(room.code)}">${room.phase==='finished'?'Results':'Rejoin'}</button><button class="quiet-button" data-action="close-room" data-code="${esc(room.code)}">Close</button></div></article>`).join('')}</div></section>`;
+  const rooms=S.openRooms.filter(isOpenRoom),phases={lobby:'Waiting',countdown:'Starting',question:'In progress',reveal:'Between questions',round_results:'Round results'};
+  return `<section class="open-rooms" aria-label="Open rooms"><div class="room-list-tools"><button class="quiet-button" data-action="refresh-rooms">Refresh</button>${rooms.length?'<button class="quiet-button room-close-button" data-action="close-all-rooms">Close all rooms</button>':''}</div>${rooms.length?`<div class="quiz-grid">${rooms.map(room=>`<article class="quiz-card card open-room-card"><div class="row between"><div class="quiz-illustration">${icon('users',21)}</div><span class="pill">${esc(phases[room.phase]||'Open')}</span></div><h3>${esc(room.title)}</h3><div class="quiz-meta"><b class="open-room-code">${esc(room.code)}</b><span>·</span><span>${Number(room.participants)||0} player${Number(room.participants)===1?'':'s'}</span></div><div class="quiz-card-footer"><button class="quiet-button room-close-button" data-action="close-room" data-code="${esc(room.code)}">Close</button><button class="btn small primary" data-action="rejoin-room" data-code="${esc(room.code)}">${icon('play',13)} Rejoin</button></div></article>`).join('')}</div>`:`<div class="empty"><div class="empty-icon">${icon('users',27)}</div><h2>No open rooms</h2></div>`}</section>`;
 }
 function confirmCloseRoom(code) {
-  const room=S.openRooms.find(r=>r.code===code);if(!room)return;
-  modal('Close room?',`<p>Ends this room for everyone and deletes unsaved results and chat. Your saved quiz and saved results stay available.</p>`,`<button class="btn danger" data-action="confirm-close-room" data-code="${esc(code)}" data-room-id="${esc(room.roomId)}">Close room</button>`);
+  const room=S.openRooms.find(r=>r.code===code&&isOpenRoom(r));if(!room)return;
+  modal('Close room?',`<p>Disconnects all players and deletes this room’s live data, including unsaved results and chat. Your saved quizzes and saved results stay available.</p>`,`<button class="btn danger" data-action="confirm-close-room" data-code="${esc(code)}" data-room-id="${esc(room.roomId)}">Close room</button>`);
+}
+function confirmCloseAllRooms() {
+  S.roomsToClose=S.openRooms.filter(isOpenRoom).map(({code,roomId})=>({code,roomId}));if(!S.roomsToClose.length)return;
+  modal('Close all rooms?',`<p>Disconnects all players in these ${S.roomsToClose.length} room${S.roomsToClose.length===1?'':'s'} and deletes their live data, including unsaved results and chat. Your saved quizzes and saved results stay available.</p>`,'<button class="btn danger" data-action="confirm-close-all-rooms">Close all rooms</button>');
+}
+function forgetClosedRoom(code) {
+  sessionStorage.removeItem(`gather.host.${code}`);
+  if(S.room?.code===code){disconnectRoom();S.room=null;S.roomState=null;}
+}
+async function closeAllRooms() {
+  const rooms=S.roomsToClose?.map(room=>({...room}))||[];if(!rooms.length)return;
+  let closed=0,failed=0;
+  for(let start=0;start<rooms.length;start+=100){
+    const batch=rooms.slice(start,start+100);
+    try{const result=await backend('/api/rooms',{rooms:batch},'DELETE');if(!Number.isInteger(result?.closed)||!Number.isInteger(result?.failed)||result.closed<0||result.failed<0||result.closed+result.failed!==batch.length)throw new Error('Incomplete room response.');closed+=result.closed;failed+=result.failed;}
+    catch{failed+=batch.length;}
+  }
+  closeModal();S.roomsToClose=[];await loadOpenRooms();
+  if(!S.roomsError)for(const room of rooms)if(!S.openRooms.some(open=>open.code===room.code&&open.roomId===room.roomId))forgetClosedRoom(room.code);
+  toast(`${closed} room${closed===1?'':'s'} closed.${failed?` ${failed} could not be confirmed closed. Refresh and try again.`:''}`,failed>0);
 }
 function renderDashboard() {
   const collections=[...new Set(S.quizzes.map(q=>q.collection).filter(Boolean))].sort();
-  shell(`<main class="page"><div class="page-head"><div><h1>My quizzes</h1></div><button class="btn primary" data-action="new-quiz">${icon('plus',16)} New quiz</button></div><div class="tabs"><button class="tab ${S.dashboardTab==='quizzes'?'active':''}" data-action="dashboard-tab" data-tab="quizzes">My quizzes <span class="muted">${S.quizzes.length}</span></button><button class="tab ${S.dashboardTab==='reports'?'active':''}" data-action="dashboard-tab" data-tab="reports">Results <span class="muted">${S.reports.length}</span></button></div>${S.dashboardTab==='quizzes'?`<div id="open-rooms">${openRoomCards()}</div><div class="dashboard-tools"><div class="search-field">${icon('search',16)}<input class="input" id="quiz-search" aria-label="Search quizzes" placeholder="Find a quiz…" value="${esc(S.search)}"></div><select class="input filter-select" id="collection-filter" aria-label="Filter by collection"><option value="">All collections</option>${collections.map(c=>`<option ${S.filter===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div><div id="quiz-list">${quizCards()}</div><div class="secondary-actions"><button class="quiet-button" data-action="sample">${icon('spark',15)} Sample quiz</button><label class="quiet-button file-label">${icon('download',15)} Import quiz<input type="file" accept="application/json,.json" id="import-quiz" aria-label="Import quiz"></label><button class="quiet-button" data-action="copy-ai-prompt">${icon('copy',15)} Copy AI prompt</button></div>`:reportList()}</main>`);
+  shell(`<main class="page"><div class="page-head"><div><h1>${S.dashboardTab==='rooms'?'Open rooms':S.dashboardTab==='reports'?'Results':'My quizzes'}</h1></div><button class="btn primary" data-action="new-quiz">${icon('plus',16)} New quiz</button></div><div class="tabs dashboard-tabs"><button class="tab ${S.dashboardTab==='quizzes'?'active':''}" data-action="dashboard-tab" data-tab="quizzes">My quizzes <span class="muted">${S.quizzes.length}</span></button><button class="tab ${S.dashboardTab==='rooms'?'active':''}" data-action="dashboard-tab" data-tab="rooms">Open rooms <span class="muted" id="open-room-count">${S.openRooms.filter(isOpenRoom).length}</span></button><button class="tab ${S.dashboardTab==='reports'?'active':''}" data-action="dashboard-tab" data-tab="reports">Results <span class="muted">${S.reports.length}</span></button></div>${S.dashboardTab==='quizzes'?`<div class="dashboard-tools"><div class="search-field">${icon('search',16)}<input class="input" id="quiz-search" aria-label="Search quizzes" placeholder="Find a quiz…" value="${esc(S.search)}"></div><select class="input filter-select" id="collection-filter" aria-label="Filter by collection"><option value="">All collections</option>${collections.map(c=>`<option ${S.filter===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div><div id="quiz-list">${quizCards()}</div><div class="secondary-actions"><button class="quiet-button" data-action="sample">${icon('spark',15)} Sample quiz</button><label class="quiet-button file-label">${icon('download',15)} Import quiz<input type="file" accept="application/json,.json" id="import-quiz" aria-label="Import quiz"></label><button class="quiet-button" data-action="copy-ai-prompt">${icon('copy',15)} Copy AI prompt</button></div>`:S.dashboardTab==='rooms'?`<div id="open-rooms">${openRoomCards()}</div>`:reportList()}</main>`);
 }
 function quizCards() {
   const quizzes=S.quizzes.filter(q=>(!S.filter||q.collection===S.filter)&&(!S.search||`${q.title} ${q.description} ${q.collection}`.toLowerCase().includes(S.search.toLowerCase())));
@@ -496,7 +517,7 @@ function revealView(st,isHost) {
 function leaderboard(players) { return `<div class="leaderboard">${players.map((p,i)=>`<div class="leader-row"><span class="leader-rank">${(p.rank??i+1)===1?'✳':String(p.rank??i+1).padStart(2,'0')}</span><span class="leader-name">${esc(p.name)}${p.id===S.room?.playerId?' <span class="muted">(you)</span>':''}</span><span class="leader-points">${Number(p.score||0).toLocaleString()} <span class="muted small">pts</span></span></div>`).join('')}</div>`; }
 function resultsView(st,isHost) {
   const rounds=st.roundResults||[],show=st.settings?.showLeaderboard||isHost;
-  return `<main><div class="results-head"><h1>Quiz complete</h1><p>${esc(st.title)}</p></div>${rounds.length?roundHistory(rounds,show):show?leaderboard(st.leaderboard||[]):''}${st.winners?.length?`<div class="card draw-card results-controls"><h2>Draw winner${st.winners.length===1?'':'s'}</h2>${st.winners.map(p=>`<div class="winner-name">${esc(p.name)}</div>`).join('')}</div>`:''}${isHost?`<section class="results-controls"><div class="row wrap results-actions"><button class="btn" data-action="save-report">${icon('check',15)} Save results</button><button class="btn" data-action="results-csv">${icon('download',15)} CSV</button><a class="btn primary" href="#dashboard">My quizzes ${icon('arrow',15)}</a></div><details class="card draw-card"><summary>Random draw</summary><form id="draw-form" class="draw-form"><label class="sr-only" for="draw-mode">Eligible group</label><select class="input" id="draw-mode"><option value="all">All players</option><option value="correct">Players with a correct answer</option><option value="top">Top scorers</option></select><label class="sr-only" for="draw-count">Number of winners</label><input class="input" id="draw-count" type="number" min="1" max="50" value="1" required><button class="btn green" type="submit">${icon('shuffle',16)} Draw</button></form></details></section>`:`<div class="results-home"><a class="quiet-button" href="#">Home ${icon('arrow',14)}</a></div>`}</main>`;
+  return `<main><div class="results-head"><h1>Quiz complete</h1><p>${esc(st.title)}</p></div>${rounds.length?roundHistory(rounds,show):show?leaderboard(st.leaderboard||[]):''}${st.winners?.length?`<div class="card draw-card results-controls"><h2>Draw winner${st.winners.length===1?'':'s'}</h2>${st.winners.map(p=>`<div class="winner-name">${esc(p.name)}</div>`).join('')}</div>`:''}${isHost?`<section class="results-controls"><div class="row wrap results-actions"><button class="btn" data-action="save-report">${icon('check',15)} Save results</button><button class="btn" data-action="results-csv">${icon('download',15)} CSV</button><a class="btn primary" href="#dashboard">My quizzes ${icon('arrow',15)}</a></div><p class="results-expiry-note muted">Unsaved results are deleted 15 minutes after the quiz ends.</p><details class="card draw-card"><summary>Random draw</summary><form id="draw-form" class="draw-form"><label class="sr-only" for="draw-mode">Eligible group</label><select class="input" id="draw-mode"><option value="all">All players</option><option value="correct">Players with a correct answer</option><option value="top">Top scorers</option></select><label class="sr-only" for="draw-count">Number of winners</label><input class="input" id="draw-count" type="number" min="1" max="50" value="1" required><button class="btn green" type="submit">${icon('shuffle',16)} Draw</button></form></details></section>`:`<div class="results-home"><a class="quiet-button" href="#">Home ${icon('arrow',14)}</a></div>`}</main>`;
 }
 function roundHistory(rounds,show=true) {
   return `<div class="round-history">${rounds.map(r=>`<section class="card round-history-card"><div class="row between"><h2>${esc(r.title)}</h2>${r.reward?`<span class="round-reward">${icon('trophy',15)} ${esc(r.reward)}</span>`:''}</div><div class="round-history-winners">${r.winners?.length?r.winners.map(p=>esc(p.name)).join(' · '):'No winner'}${r.tied?' <span class="muted">(tied)</span>':''}</div>${show?`<details><summary>Leaderboard</summary>${leaderboard(r.leaderboard||[])}</details>`:''}</section>`).join('')}</div>`;
@@ -543,7 +564,7 @@ const actions = {
   'zoom-answer':zoomAnswer,
   'auth-mode':el=>{S.authMode=el.dataset.mode;S.authMessage='';authView();},
   'reload-dashboard':dashboard,
-  'dashboard-tab':el=>{S.dashboardTab=el.dataset.tab;renderDashboard();},
+  'dashboard-tab':async el=>{S.dashboardTab=el.dataset.tab;renderDashboard();if(S.dashboardTab==='rooms')await loadOpenRooms();},
   'new-quiz':()=>{S.draft=blankQuiz();S.questionIndex=0;S.dirty=true;location.hash=`#edit/${S.draft.id}`;renderEditor();setTimeout(()=>{const details=$('.editor-settings');if(details)details.open=true;$('#quiz-title')?.focus();$('#quiz-title')?.select();},20);},
   'sample':sampleQuiz,
   'remove-question-image':()=>{S.draft.questions[S.questionIndex].image='';markDirty();renderEditor();},
@@ -553,9 +574,11 @@ const actions = {
   'host-draft':async()=>{const d=await saveQuiz(true);await hostQuiz(d.id,d.settings);},
   'host-quiz':el=>hostQuiz(el.dataset.id),
   'refresh-rooms':()=>loadOpenRooms(),
-  'rejoin-room':el=>{S.room={code:el.dataset.code,role:'host'};S.fatalRoomError=null;sessionStorage.setItem(`gather.host.${el.dataset.code}`,'1');location.hash=`#room/${el.dataset.code}`;},
+  'rejoin-room':el=>{if(!S.openRooms.some(room=>room.code===el.dataset.code&&isOpenRoom(room)))return;S.room={code:el.dataset.code,role:'host'};S.fatalRoomError=null;sessionStorage.setItem(`gather.host.${el.dataset.code}`,'1');location.hash=`#room/${el.dataset.code}`;},
   'close-room':el=>confirmCloseRoom(el.dataset.code),
-  'confirm-close-room':async el=>{await backend(`/api/rooms/${el.dataset.code}`,{roomId:el.dataset.roomId},'DELETE');sessionStorage.removeItem(`gather.host.${el.dataset.code}`);if(S.room?.code===el.dataset.code){disconnectRoom();S.room=null;S.roomState=null;}closeModal();await loadOpenRooms();toast('Room closed.');},
+  'confirm-close-room':async el=>{await backend(`/api/rooms/${el.dataset.code}`,{roomId:el.dataset.roomId},'DELETE');forgetClosedRoom(el.dataset.code);closeModal();await loadOpenRooms();toast('Room closed.');},
+  'close-all-rooms':confirmCloseAllRooms,
+  'confirm-close-all-rooms':closeAllRooms,
   'export-quiz':exportQuiz,
   'select-question':el=>{S.questionIndex=Number(el.dataset.index);S.currentRoundId=questionRound(S.draft.questions[S.questionIndex].id)?.id;renderEditor();},
   'add-question':()=>{if(S.draft.questions.length>=500)throw new Error('A quiz can have up to 500 questions.');const roundId=S.currentRoundId||questionRound(S.draft.questions[S.questionIndex]?.id)?.id||S.draft.settings.rounds?.[0]?.id,q=newQuestion();S.draft.questions.push(q);if(roundId)assignQuestion(q.id,roundId);S.questionIndex=S.draft.questions.length-1;markDirty();renderEditor();},
@@ -584,7 +607,7 @@ const actions = {
   'confirm-finish':()=>{send({type:'finish'});closeModal();},
   'kick-player':el=>modal('Remove this player?',`<p>${esc(el.dataset.name)} will be removed from this quiz.</p>`,`<button class="btn danger" data-action="confirm-kick" data-id="${el.dataset.id}">Remove player</button>`),
   'confirm-kick':el=>{send({type:'kick',playerId:el.dataset.id});closeModal();},
-  'leave-room':()=>modal('Leave quiz?',`<p>${S.room.role==='host'?'Players stay in the room. Rejoin or close it from My quizzes.':'You can rejoin from this browser while the room is still open.'}</p>`,'<button class="btn primary" data-action="confirm-leave">Leave quiz</button>'),
+  'leave-room':()=>modal('Leave quiz?',`<p>${S.room.role==='host'?(S.roomState?.phase==='finished'?'Saved results stay in My quizzes → Results.':'Players stay in the room. Rejoin or close it from My quizzes → Open rooms.'):'You can rejoin from this browser while the room is still open.'}</p>`,'<button class="btn primary" data-action="confirm-leave">Leave quiz</button>'),
   'confirm-leave':()=>{const host=S.room?.role==='host';closeModal();disconnectRoom();S.room=null;S.roomState=null;S.fatalRoomError=null;location.hash=host?'#dashboard':'#';},
   'choose-answer':el=>{const q=S.roomState?.question;if(!S.connected||!q||S.answerSent||S.answerPending||S.room.role==='host')return;if(q.type==='multi'){if(!Array.isArray(S.selection))S.selection=[];S.selection=S.selection.includes(el.dataset.id)?S.selection.filter(id=>id!==el.dataset.id):[...S.selection,el.dataset.id];refreshAnswerUI();}else sendAnswer(el.dataset.id);},
   'submit-multi':()=>{if(S.selection?.length)sendAnswer(S.selection);},

@@ -33,13 +33,15 @@ async function accountChatAccess(ownerId){
   await accessQueue;return accessStore.account(await chatOwnerKey(env,ownerId));
 }
 const rooms=new Map();const LIFETIME=86400000;
+const FINISHED_RETENTION=15*60*1000;
+function roomExpires(room){return room.engine?.phase==='finished'&&Number.isFinite(room.engine.finishedAt)?room.engine.finishedAt+FINISHED_RETENTION:room.meta.expiresAt;}
 const ROOM_FILES=['.json','.journal','.json.tmp','.conversation.json','.conversation.json.tmp'];
 function makeRoom(engine,meta,revision=crypto.randomUUID()){return {engine,meta,revision,closed:false,clients:new Map(),queue:Promise.resolve(),joinTimer:null,progressTimer:null,media:new RoomMedia()};}
 for(const name of await readdir(stateDir)){
   if(!/^\d{6}\.json$/.test(name))continue;
   try{
     const saved=JSON.parse(await readFile(join(stateDir,name),'utf8'));
-    if(saved.meta.expiresAt<=Date.now()){
+    if(roomExpires({engine:saved.state,meta:saved.meta})<=Date.now()){
       for(const suffix of ROOM_FILES)try{await unlink(join(stateDir,`${name.slice(0,6)}${suffix}`));}catch(error){if(error.code!=='ENOENT')throw error;}
       continue;
     }
@@ -124,17 +126,18 @@ const adapter={
    try{await serial(room,()=>persist(room));return code;}catch(error){await serial(room,()=>purge(code));throw error;}
   }throw new HttpError(503,'No room code available; retry.');
  },
- async list(ownerId){return [...rooms].filter(([,r])=>!r.closed&&r.meta.ownerId===ownerId&&r.meta.expiresAt>Date.now()).map(([code,r])=>({code,roomId:r.meta.reportId,quizId:r.meta.quizId,title:r.meta.title,phase:r.engine.phase,participants:r.engine.players.size,expires:r.meta.expiresAt})).sort((a,b)=>b.expires-a.expires);},
- async close(code,ownerId,roomId){
-  const room=rooms.get(code);if(!room||room.closed||room.meta.expiresAt<=Date.now())throw new HttpError(404,'Quiz not found or expired.');
+ async list(ownerId){return [...rooms].filter(([,r])=>!r.closed&&r.engine.phase!=='finished'&&r.meta.ownerId===ownerId&&roomExpires(r)>Date.now()).map(([code,r])=>({code,roomId:r.meta.reportId,quizId:r.meta.quizId,title:r.meta.title,phase:r.engine.phase,participants:r.engine.players.size,expires:r.meta.expiresAt})).sort((a,b)=>b.expires-a.expires);},
+ async close(code,ownerId,roomId,{unfinishedOnly=false}={}){
+  const room=rooms.get(code);if(!room||room.closed||roomExpires(room)<=Date.now())throw new HttpError(404,'Quiz not found or expired.');
   await serial(room,async()=>{
-   if(room.closed)throw new HttpError(404,'Quiz not found or expired.');
+   if(room.closed||roomExpires(room)<=Date.now())throw new HttpError(404,'Quiz not found or expired.');
    if(room.meta.ownerId!==ownerId)throw new HttpError(403,'This room belongs to another host.');
    if(room.meta.reportId!==roomId)throw new HttpError(409,'This room has changed. Refresh your rooms.');
+   if(unfinishedOnly&&room.engine.phase==='finished')throw new HttpError(409,'This quiz has already finished.');
    await purge(code);
   });
  },
- async report(code,ownerId){const r=rooms.get(code);if(!r)throw new HttpError(404,'Room not found.');if(r.meta.ownerId!==ownerId)throw new HttpError(403,'This room belongs to another host.');if(r.engine.phase!=='finished')throw new HttpError(409,'Finish the quiz first.');return {id:r.meta.reportId,quizId:r.meta.quizId,title:r.meta.title,results:r.engine.report()};},
+ async report(code,ownerId){const r=rooms.get(code);if(!r||r.closed||roomExpires(r)<=Date.now())throw new HttpError(404,'Room not found.');if(r.meta.ownerId!==ownerId)throw new HttpError(403,'This room belongs to another host.');if(r.engine.phase!=='finished')throw new HttpError(409,'Finish the quiz first.');return {id:r.meta.reportId,quizId:r.meta.quizId,title:r.meta.title,results:r.engine.report()};},
  async purgeOwner(ownerId){deletingOwners.set(ownerId,Date.now()+120000);for(const [code,r] of rooms)if(r.meta.ownerId===ownerId)await serial(r,()=>purge(code));if(env.CHAT_CODE_PEPPER){const key=await chatOwnerKey(env,ownerId);if(accessStore.account(key)||accessStore.attempt(key))await updateAccess(()=>accessStore.revoke(key));}}
 };
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.webp':'image/webp','.ico':'image/x-icon','.json':'application/json','.txt':'text/plain'};
@@ -151,7 +154,7 @@ const server=http.createServer(async(req,res)=>{
    if(image&&request.method==='GET'){
      if(!originAllowed(request,env))return nodeResponse(res,json({error:'This website origin is not allowed.'},403));
      const room=rooms.get(image[1]);
-     if(!room||room.closed||room.meta.expiresAt<=Date.now())return nodeResponse(res,json({error:'Quiz not found.'},404));
+     if(!room||room.closed||roomExpires(room)<=Date.now())return nodeResponse(res,json({error:'Quiz not found.'},404));
      const response=await room.media.response(room.engine,env,image[2],!!image[3]);
      if(room.closed)return nodeResponse(res,json({error:'Quiz not found.'},404));
      return nodeResponse(res,responseHeaders(request,env,response));
@@ -171,11 +174,11 @@ const wss=new WebSocketServer({noServer:true,maxPayload:MAX_MESSAGE_BYTES});
 server.on('upgrade',(req,socket,head)=>{
  let request;try{request=webRequest(req);}catch{socket.destroy();return;}
  const code=new URL(request.url).pathname.match(/^\/api\/rooms\/(\d{6})\/ws$/)?.[1],room=rooms.get(code);
- if(!originAllowed(request,env)||!room||room.meta.expiresAt<=Date.now()||!rateLimit(req)){socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');socket.destroy();return;}
+ if(!originAllowed(request,env)||!room||room.closed||roomExpires(room)<=Date.now()||!rateLimit(req)){socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');socket.destroy();return;}
  wss.handleUpgrade(req,socket,head,ws=>{
   const identity={};room.clients.set(ws,identity);
   const authTimer=setTimeout(()=>{if(!identity.role)ws.close(4008,'Join timed out.');},10000);
-  const active=()=>!room.closed&&!identity.superseded&&ws.readyState===1&&room.meta.expiresAt>Date.now();
+  const active=()=>!room.closed&&!identity.superseded&&ws.readyState===1&&roomExpires(room)>Date.now();
   const expireAuth=()=>{if(!identity.role && Date.now()-identity.acceptedAt>=10000){identity.superseded=true;ws.close(4008,'Join timed out.');return true;}return false;};
   identity.acceptedAt=Date.now();
   const applyAuth=async(auth)=>{
@@ -266,7 +269,7 @@ server.on('upgrade',(req,socket,head)=>{
 });
 const ticking=setInterval(()=>{
  for(const [code,room]of rooms){serial(room,async()=>{
-  if(room.meta.expiresAt<=Date.now()){await purge(code);return;}
+  if(roomExpires(room)<=Date.now()){await purge(code);return;}
   if(room.engine.nextDeadline()&&room.engine.nextDeadline()<=Date.now()){room.engine.tick();await persist(room);broadcast(room);}
  }).catch(()=>{});}
  for(const [ip,entry]of rates)if(Date.now()-entry.start>60000)rates.delete(ip);

@@ -6,6 +6,7 @@ import {chatCodeRequest,chatOwnerKey,redeemChatCode,CHAT_ACCESS_REGISTRY} from '
 import {handleApi, originAllowed, json, HttpError, responseHeaders} from '../shared/api.js';
 import {decodeMessage, authorize, safeError, allowMessage} from '../shared/protocol.js';
 const LIFETIME=24*60*60*1000;
+const FINISHED_RETENTION=15*60*1000;
 const CHUNK_SIZE=256*1024;
 function chunks(text){const values=[];for(let start=0;start<text.length;){let end=Math.min(start+CHUNK_SIZE,text.length);const last=text.charCodeAt(end-1);if(end<text.length&&last>=0xd800&&last<=0xdbff)end--;values.push(text.slice(start,end));start=end;}return values;}
 
@@ -32,6 +33,10 @@ export class GiveawayRoom extends DurableObject {
       }
       this.hostSockets=new Set(ctx.getWebSockets().filter(ws=>{const identity=ws.deserializeAttachment();return identity?.role==='host'&&!identity.superseded&&identity.roomId===this.meta?.reportId;}));
       ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping','pong'));
+      if(this.engine){
+        const alarm=await ctx.storage.getAlarm();
+        if(alarm===null||alarm>this.expiresAt())await this.schedule();
+      }
     });
   }
   initializeStorage() {
@@ -42,8 +47,9 @@ export class GiveawayRoom extends DurableObject {
     this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS conversation_chunks (part INTEGER PRIMARY KEY, data TEXT NOT NULL)');
   }
   ensure() {
-    if(!this.engine || this.meta.expiresAt <= Date.now())throw new HttpError(404,'Quiz not found or expired.');
+    if(!this.engine || this.purging || this.expiresAt() <= Date.now())throw new HttpError(404,'Quiz not found or expired.');
   }
+  expiresAt(){return this.engine?.phase==='finished'&&Number.isFinite(this.engine.finishedAt)?this.engine.finishedAt+FINISHED_RETENTION:this.meta?.expiresAt;}
   checkpoint() {
     const state=JSON.stringify(this.engine.serialize({includePlayers:false,includeConversation:false}));
     this.ctx.storage.transactionSync(()=>{
@@ -73,7 +79,7 @@ export class GiveawayRoom extends DurableObject {
   savePlayer(id) {this.ctx.storage.transactionSync(()=>this.writePlayer(id));}
   async schedule() {
     if(!this.engine)return;
-    let next=this.meta.expiresAt;
+    let next=this.expiresAt();
     const deadline=this.engine.nextDeadline();
     if(deadline)next=Math.min(next,deadline);
     for(const ws of this.ctx.getWebSockets()){
@@ -87,7 +93,8 @@ export class GiveawayRoom extends DurableObject {
     this.creating=true;
     try {
       if(this.purging)await this.purging;
-      if(this.meta && this.meta.expiresAt > Date.now())return {ok:true,created:false};
+      if(this.engine && this.expiresAt() > Date.now())return {ok:true,created:false};
+      if(this.meta)await this.purge(this.meta.ownerId);
       const engine=new RoomEngine({...data,mediaOrigin:this.env.SUPABASE_URL});
       if(await this.accountChatAccess(data.ownerId))engine.authorizeChat({enable:false});
       this.closeConnections('This room code has been renewed.');
@@ -109,14 +116,15 @@ export class GiveawayRoom extends DurableObject {
     }catch(error){return rpcFailure(error);}
   }
   getSummary(ownerId) {
-    if(!this.engine||this.meta.expiresAt<=Date.now()||this.meta.ownerId!==ownerId)return null;
+    if(!this.engine||this.purging||this.engine.phase==='finished'||this.expiresAt()<=Date.now()||this.meta.ownerId!==ownerId)return null;
     return {code:this.engine.code,roomId:this.meta.reportId,quizId:this.meta.quizId,title:this.meta.title,phase:this.engine.phase,participants:this.engine.players.size,expires:this.meta.expiresAt};
   }
-  async closeRoom(ownerId,roomId) {
+  async closeRoom(ownerId,roomId,unfinishedOnly=false) {
     try{
       this.ensure();
       if(this.meta.ownerId!==ownerId)throw new HttpError(403,'This room belongs to another host.');
       if(this.meta.reportId!==roomId)throw new HttpError(409,'This room has changed. Refresh your rooms.');
+      if(unfinishedOnly&&this.engine.phase==='finished')throw new HttpError(409,'This quiz has already finished.');
       await this.purge(ownerId);return {ok:true};
     }catch(error){return rpcFailure(error);}
   }
@@ -130,8 +138,14 @@ export class GiveawayRoom extends DurableObject {
     if(this.purging){await this.purging;return;}
     if(!this.meta || ownerId!==this.meta.ownerId)return;
     this.closeConnections('This quiz has closed.');
-    this.engine=null;this.meta=null;
-    this.purging=(async()=>{await this.ctx.storage.deleteAll();this.initializeStorage();})();
+    const code=this.engine.code;
+    this.purging=(async()=>{
+      if(this.env.ACCOUNTS){
+        const index=this.env.ACCOUNTS.getByName(ownerId),entry=(await index.list()).find(room=>room.code===code);
+        if(entry)await index.remove(code,entry.expires);
+      }
+      await this.ctx.storage.deleteAll();this.initializeStorage();this.engine=null;this.meta=null;this.media=new RoomMedia();
+    })();
     try{await this.purging;}finally{this.purging=null;}
   }
   async fetch(request) {
@@ -190,7 +204,7 @@ export class GiveawayRoom extends DurableObject {
     let persistedPhase=observedEngine?.phase;
     // Joins and answers also tick internally; their transitions need full checkpoints.
     const persistTransition=async()=>{
-      if(!this.engine || this.engine!==observedEngine || this.engine.phase===persistedPhase)return;
+      if(!this.engine || this.purging || this.engine!==observedEngine || this.engine.phase===persistedPhase)return;
       this.checkpoint();this.broadcast();await this.schedule();
       persistedPhase=this.engine.phase;
     };
@@ -279,13 +293,13 @@ export class GiveawayRoom extends DurableObject {
   async webSocketClose(ws) {
     this.hostSockets.delete(ws);
     const identity=ws.deserializeAttachment();
-    if(this.engine && identity?.playerId && identity.roomId===this.meta.reportId){this.engine.disconnect(identity.playerId);this.savePlayer(identity.playerId);this.broadcastJoins();}
+    if(this.engine && !this.purging && identity?.playerId && identity.roomId===this.meta.reportId){this.engine.disconnect(identity.playerId);this.savePlayer(identity.playerId);this.broadcastJoins();}
     try{ws.close(1000,'Connection closed.');}catch{}
   }
   async webSocketError(ws){await this.webSocketClose(ws);}
   async alarm() {
     if(!this.engine)return;
-    if(this.meta.expiresAt<=Date.now()){
+    if(this.expiresAt()<=Date.now()){
       const ownerId=this.meta.ownerId;await this.purge(ownerId);return;
     }
     for(const ws of this.ctx.getWebSockets()){
@@ -377,10 +391,8 @@ function roomAdapter(env){return {
     for(let i=0;i<indexed.length;i+=5){const batch=await Promise.all(indexed.slice(i,i+5).map(r=>env.ROOMS.getByName(r.code).getSummary(ownerId)));rooms.push(...batch.filter(Boolean));}
     return rooms.sort((a,b)=>b.expires-a.expires);
   },
-  async close(code,ownerId,roomId){
-    const index=env.ACCOUNTS.getByName(ownerId),entry=(await index.list()).find(room=>room.code===code);
-    unwrapRpc(await env.ROOMS.getByName(code).closeRoom(ownerId,roomId));
-    if(entry)await index.remove(code,entry.expires);
+  async close(code,ownerId,roomId,{unfinishedOnly=false}={}){
+    unwrapRpc(await env.ROOMS.getByName(code).closeRoom(ownerId,roomId,unfinishedOnly));
   },
   async report(code,ownerId){return unwrapRpc(await env.ROOMS.getByName(code).getReport(ownerId),'report');},
   async purgeOwner(ownerId){const index=env.ACCOUNTS.getByName(ownerId);const rooms=await index.beginDelete();await Promise.all(rooms.map(r=>env.ROOMS.getByName(r.code).purge(ownerId)));if(env.CHAT_CODE_PEPPER)await env.ACCOUNTS.getByName(CHAT_ACCESS_REGISTRY).revokeChatAccess(await chatOwnerKey(env,ownerId));await index.clear();}

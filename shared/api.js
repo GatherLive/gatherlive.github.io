@@ -93,6 +93,20 @@ export async function handleApi(request, env, rooms) {
     } else if (pathname === '/api/rooms' && request.method === 'GET') {
       const user=await authenticate(env,bearer(request));
       response=json({rooms:await rooms.list(user.id)});
+    } else if (pathname === '/api/rooms' && request.method === 'DELETE') {
+      const user=await authenticate(env,bearer(request)),body=await readJson(request,16_384);
+      if(!Array.isArray(body?.rooms)||!body.rooms.length||body.rooms.length>100)throw new HttpError(400,'Choose between 1 and 100 open rooms.');
+      const codes=new Set();
+      for(const room of body.rooms){
+        if(typeof room?.code!=='string'||!/^\d{6}$/.test(room.code)||typeof room?.roomId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(room.roomId)||codes.has(room.code))throw new HttpError(400,'Refresh your open rooms before closing them.');
+        codes.add(room.code);
+      }
+      let closed=0,failed=0;
+      for(let i=0;i<body.rooms.length;i+=5){
+        const results=await Promise.allSettled(body.rooms.slice(i,i+5).map(room=>rooms.close(room.code,user.id,room.roomId,{unfinishedOnly:true})));
+        for(const result of results)if(result.status==='fulfilled')closed++;else failed++;
+      }
+      response=json({closed,failed});
     } else if (/^\/api\/rooms\/\d{6}$/.test(pathname) && request.method === 'DELETE') {
       const user=await authenticate(env,bearer(request)),code=pathname.split('/')[3],body=await readJson(request,1024);
       if(typeof body?.roomId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(body.roomId))throw new HttpError(400,'Refresh your rooms before closing one.');
