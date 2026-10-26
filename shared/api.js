@@ -93,6 +93,11 @@ export async function handleApi(request, env, rooms) {
     } else if (pathname === '/api/rooms' && request.method === 'GET') {
       const user=await authenticate(env,bearer(request));
       response=json({rooms:await rooms.list(user.id)});
+    } else if (/^\/api\/rooms\/\d{6}$/.test(pathname) && request.method === 'DELETE') {
+      const user=await authenticate(env,bearer(request)),code=pathname.split('/')[3],body=await readJson(request,1024);
+      if(typeof body?.roomId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(body.roomId))throw new HttpError(400,'Refresh your rooms before closing one.');
+      await rooms.close(code,user.id,body.roomId);
+      response=json({closed:true});
     } else if (/^\/api\/rooms\/\d{6}\/report$/.test(pathname) && request.method === 'POST') {
       const token=bearer(request), user=await authenticate(env,token), code=pathname.split('/')[3];
       const report=await rooms.report(code,user.id);

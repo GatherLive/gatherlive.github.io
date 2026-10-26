@@ -124,7 +124,16 @@ const adapter={
    try{await serial(room,()=>persist(room));return code;}catch(error){await serial(room,()=>purge(code));throw error;}
   }throw new HttpError(503,'No room code available; retry.');
  },
- async list(ownerId){return [...rooms].filter(([,r])=>r.meta.ownerId===ownerId).map(([code,r])=>({code,expires:r.meta.expiresAt}));},
+ async list(ownerId){return [...rooms].filter(([,r])=>!r.closed&&r.meta.ownerId===ownerId&&r.meta.expiresAt>Date.now()).map(([code,r])=>({code,roomId:r.meta.reportId,quizId:r.meta.quizId,title:r.meta.title,phase:r.engine.phase,participants:r.engine.players.size,expires:r.meta.expiresAt})).sort((a,b)=>b.expires-a.expires);},
+ async close(code,ownerId,roomId){
+  const room=rooms.get(code);if(!room||room.closed||room.meta.expiresAt<=Date.now())throw new HttpError(404,'Quiz not found or expired.');
+  await serial(room,async()=>{
+   if(room.closed)throw new HttpError(404,'Quiz not found or expired.');
+   if(room.meta.ownerId!==ownerId)throw new HttpError(403,'This room belongs to another host.');
+   if(room.meta.reportId!==roomId)throw new HttpError(409,'This room has changed. Refresh your rooms.');
+   await purge(code);
+  });
+ },
  async report(code,ownerId){const r=rooms.get(code);if(!r)throw new HttpError(404,'Room not found.');if(r.meta.ownerId!==ownerId)throw new HttpError(403,'This room belongs to another host.');if(r.engine.phase!=='finished')throw new HttpError(409,'Finish the quiz first.');return {id:r.meta.reportId,quizId:r.meta.quizId,title:r.meta.title,results:r.engine.report()};},
  async purgeOwner(ownerId){deletingOwners.set(ownerId,Date.now()+120000);for(const [code,r] of rooms)if(r.meta.ownerId===ownerId)await serial(r,()=>purge(code));if(env.CHAT_CODE_PEPPER){const key=await chatOwnerKey(env,ownerId);if(accessStore.account(key)||accessStore.attempt(key))await updateAccess(()=>accessStore.revoke(key));}}
 };

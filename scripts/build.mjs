@@ -1,5 +1,6 @@
-import {cp,mkdir,rm,writeFile} from 'node:fs/promises';
+import {cp,mkdir,rm,writeFile,readFile,readdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
+import {createHash} from 'node:crypto';
 import {setDefaultResultOrder} from 'node:dns';
 import {loadConfig} from './config.mjs';
 setDefaultResultOrder('ipv4first');
@@ -28,5 +29,17 @@ await cp(resolve('public'),output,{recursive:true});
 // These settings are already public on the backend. Secrets never enter the build.
 // Embedding them avoids startup API requests for every visitor to the static site.
 await writeFile(resolve(output,'config.js'),`window.GATHER_CONFIG = ${JSON.stringify(browserConfig,null,2)};\n`);
+// One content version covers the entrypoints and every imported browser module.
+// A fresh HTML page therefore cannot combine a new entrypoint with cached modules.
+const assets=(await readdir(output)).filter(name=>/\.(?:js|css|html)$/.test(name)).sort();
+const digest=createHash('sha256');
+for(const name of assets)digest.update(name).update(await readFile(resolve(output,name)));
+const revision=digest.digest('hex').slice(0,16);
+for(const name of assets){
+ let source=await readFile(resolve(output,name),'utf8');
+ if(name.endsWith('.js'))source=source.replace(/(['"])(\.\/[A-Za-z0-9_-]+\.js)\1/g,(_match,quote,path)=>quote+path+'?v='+revision+quote);
+ if(name==='index.html')source=source.replace(/((?:src|href)="\.\/[^"?]+\.(?:js|css))"/g,'$1?v='+revision+'"').replace('</head>',`  <meta name="gather-release" content="${revision}">\n</head>`);
+ await writeFile(resolve(output,name),source);
+}
 await writeFile(resolve(output,'.nojekyll'),'');
 console.log('Built dist/ for GitHub Pages.');

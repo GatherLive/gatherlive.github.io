@@ -108,6 +108,18 @@ export class GiveawayRoom extends DurableObject {
       return {ok:true,report:{id:this.meta.reportId,quizId:this.meta.quizId,title:this.meta.title,results:this.engine.report()}};
     }catch(error){return rpcFailure(error);}
   }
+  getSummary(ownerId) {
+    if(!this.engine||this.meta.expiresAt<=Date.now()||this.meta.ownerId!==ownerId)return null;
+    return {code:this.engine.code,roomId:this.meta.reportId,quizId:this.meta.quizId,title:this.meta.title,phase:this.engine.phase,participants:this.engine.players.size,expires:this.meta.expiresAt};
+  }
+  async closeRoom(ownerId,roomId) {
+    try{
+      this.ensure();
+      if(this.meta.ownerId!==ownerId)throw new HttpError(403,'This room belongs to another host.');
+      if(this.meta.reportId!==roomId)throw new HttpError(409,'This room has changed. Refresh your rooms.');
+      await this.purge(ownerId);return {ok:true};
+    }catch(error){return rpcFailure(error);}
+  }
   closeConnections(reason) {
     this.hostSockets.clear();
     if(this.joinBroadcast){clearTimeout(this.joinBroadcast);this.joinBroadcast=null;}
@@ -326,6 +338,7 @@ export class AccountRooms extends DurableObject {
   }
   list(){this.ctx.storage.sql.exec('DELETE FROM rooms WHERE expires < ?',Date.now());return this.ctx.storage.sql.exec('SELECT code,expires FROM rooms').toArray();}
   async beginDelete(){const until=Date.now()+120000;this.ctx.storage.sql.exec('INSERT OR REPLACE INTO closing(id,until_ms) VALUES(1,?)',until);await this.ctx.storage.setAlarm(until);return this.list();}
+  remove(code,expires){this.ctx.storage.sql.exec('DELETE FROM rooms WHERE code=? AND expires=?',code,expires);}
   clear(){this.ctx.storage.sql.exec('DELETE FROM rooms');}
   alarm(){this.ctx.storage.sql.exec('DELETE FROM closing WHERE until_ms <= ?',Date.now());}
 }
@@ -359,7 +372,16 @@ function roomAdapter(env){return {
     }
     throw new HttpError(503,'Could not reserve a room code. Please retry.');
   },
-  list(ownerId){return env.ACCOUNTS.getByName(ownerId).list();},
+  async list(ownerId){
+    const indexed=await env.ACCOUNTS.getByName(ownerId).list(),rooms=[];
+    for(let i=0;i<indexed.length;i+=5){const batch=await Promise.all(indexed.slice(i,i+5).map(r=>env.ROOMS.getByName(r.code).getSummary(ownerId)));rooms.push(...batch.filter(Boolean));}
+    return rooms.sort((a,b)=>b.expires-a.expires);
+  },
+  async close(code,ownerId,roomId){
+    const index=env.ACCOUNTS.getByName(ownerId),entry=(await index.list()).find(room=>room.code===code);
+    unwrapRpc(await env.ROOMS.getByName(code).closeRoom(ownerId,roomId));
+    if(entry)await index.remove(code,entry.expires);
+  },
   async report(code,ownerId){return unwrapRpc(await env.ROOMS.getByName(code).getReport(ownerId),'report');},
   async purgeOwner(ownerId){const index=env.ACCOUNTS.getByName(ownerId);const rooms=await index.beginDelete();await Promise.all(rooms.map(r=>env.ROOMS.getByName(r.code).purge(ownerId)));if(env.CHAT_CODE_PEPPER)await env.ACCOUNTS.getByName(CHAT_ACCESS_REGISTRY).revokeChatAccess(await chatOwnerKey(env,ownerId));await index.clear();}
 };}

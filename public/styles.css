@@ -383,3 +383,6 @@
 .live-answer-status{height:58px;flex:none;display:flex;align-items:center;justify-content:center}
 .live-answer-status .answer-result{padding:8px 14px;font-size:13px;line-height:1.4}
 .live-answer-status .answer-result,.live-answer-status .answer-note{margin:0}
+
+.open-rooms{margin:0 0 30px}.open-rooms h2{font-size:18px}.open-room-list{display:grid;gap:10px;margin-top:10px}.open-room{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 20px}.open-room-info{min-width:0}.open-room h3{font-size:16px;margin:0 0 7px;overflow-wrap:anywhere}.open-room p{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:12px;color:var(--muted);margin:0}.open-room p b{color:var(--text);letter-spacing:1px;font-variant-numeric:tabular-nums}.open-room-actions{display:flex;align-items:center;gap:5px;flex-shrink:0}.room-list-notice{display:flex;align-items:center;justify-content:space-between;color:var(--muted);font-size:13px;margin-bottom:16px}
+@media(max-width:480px){.open-room{align-items:flex-start;flex-direction:column;gap:14px;padding:17px}.open-room-actions{width:100%;justify-content:flex-end}.open-room-info{width:100%}}

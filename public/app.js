@@ -21,7 +21,7 @@ const icon = (name, size = 20) => {
 };
 const brand = () => `<a class="brand" href="#" aria-label="Gather home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>gather</a>`;
 const TYPES = {single:'Multiple choice',multi:'Multiple answers',true_false:'True or false',short_answer:'Type an answer',poll:'Poll',order:'Put in order',slider:'Number slider',word_cloud:'Word cloud',open_ended:'Open response',pin:'Pin on image',slide:'Information slide'};
-const S = {config:{},session:null,quizzes:[],reports:[],dashboardTab:'quizzes',filter:'',search:'',draft:null,questionIndex:0,dirty:false,saving:false,room:null,roomState:null,ws:null,wsGeneration:0,reconnectTimer:null,retries:0,connected:false,selection:null,answerPending:false,answerSent:false,order:[],pin:null,authMode:'login',authMessage:'',loading:false};
+const S = {config:{},session:null,quizzes:[],reports:[],openRooms:[],roomsError:'',dashboardTab:'quizzes',filter:'',search:'',draft:null,questionIndex:0,dirty:false,saving:false,room:null,roomState:null,ws:null,wsGeneration:0,reconnectTimer:null,retries:0,connected:false,selection:null,answerPending:false,answerSent:false,order:[],pin:null,authMode:'login',authMessage:'',loading:false};
 let toastTimer, sessionRefresh;
 try { S.session = JSON.parse(localStorage.getItem('gather.session') || 'null'); } catch {}
 const app = $('#app');
@@ -88,12 +88,27 @@ function joinView(code='') {
 }
 async function dashboard() {
   loading();
-  try { [S.quizzes,S.reports] = await Promise.all([db('giveaway_quizzes?select=*&order=updated_at.desc'),db('giveaway_reports?select=*&order=created_at.desc&limit=100')]); renderDashboard(); }
+  try { [S.quizzes,S.reports] = await Promise.all([db('giveaway_quizzes?select=*&order=updated_at.desc'),db('giveaway_reports?select=*&order=created_at.desc&limit=100'),loadOpenRooms(false)]); renderDashboard(); }
   catch(error) { if(!S.session){location.hash='#host';return;} shell(`<main class="page"><h1 style="font-size:32px">Your quiz space</h1><div class="error-note">${esc(error.message)}</div><button class="btn" data-action="reload-dashboard">Try again</button></main>`); }
+}
+async function loadOpenRooms(update=true) {
+  try{S.openRooms=(await backend('/api/rooms',null,'GET')).rooms;S.roomsError='';}
+  catch(error){S.openRooms=[];S.roomsError=error.message;}
+  if(update&&$('#open-rooms'))$('#open-rooms').innerHTML=openRoomCards();
+}
+function openRoomCards() {
+  if(S.roomsError)return `<div class="room-list-notice"><span>Rooms unavailable</span><button class="quiet-button" data-action="refresh-rooms">Try again</button></div>`;
+  if(!S.openRooms.length)return '';
+  const phases={lobby:'Waiting',countdown:'Starting',question:'In progress',reveal:'Between questions',round_results:'Round results',finished:'Results'};
+  return `<section class="open-rooms" aria-labelledby="open-rooms-title"><div class="row between"><h2 id="open-rooms-title">Open rooms</h2><button class="quiet-button" data-action="refresh-rooms" aria-label="Refresh rooms">Refresh</button></div><div class="open-room-list">${S.openRooms.map(room=>`<article class="open-room card"><div class="open-room-info"><h3>${esc(room.title)}</h3><p><b>${esc(room.code)}</b><span>${esc(phases[room.phase]||'Open')}</span><span>${room.participants} player${room.participants===1?'':'s'}</span></p></div><div class="open-room-actions"><button class="btn small primary" data-action="rejoin-room" data-code="${esc(room.code)}">${room.phase==='finished'?'Results':'Rejoin'}</button><button class="quiet-button" data-action="close-room" data-code="${esc(room.code)}">Close</button></div></article>`).join('')}</div></section>`;
+}
+function confirmCloseRoom(code) {
+  const room=S.openRooms.find(r=>r.code===code);if(!room)return;
+  modal('Close room?',`<p>Ends this room for everyone and deletes unsaved results and chat. Your saved quiz and saved results stay available.</p>`,`<button class="btn danger" data-action="confirm-close-room" data-code="${esc(code)}" data-room-id="${esc(room.roomId)}">Close room</button>`);
 }
 function renderDashboard() {
   const collections=[...new Set(S.quizzes.map(q=>q.collection).filter(Boolean))].sort();
-  shell(`<main class="page"><div class="page-head"><div><h1>My quizzes</h1></div><button class="btn primary" data-action="new-quiz">${icon('plus',16)} New quiz</button></div><div class="tabs"><button class="tab ${S.dashboardTab==='quizzes'?'active':''}" data-action="dashboard-tab" data-tab="quizzes">My quizzes <span class="muted">${S.quizzes.length}</span></button><button class="tab ${S.dashboardTab==='reports'?'active':''}" data-action="dashboard-tab" data-tab="reports">Results <span class="muted">${S.reports.length}</span></button></div>${S.dashboardTab==='quizzes'?`<div class="dashboard-tools"><div class="search-field">${icon('search',16)}<input class="input" id="quiz-search" aria-label="Search quizzes" placeholder="Find a quiz…" value="${esc(S.search)}"></div><select class="input filter-select" id="collection-filter" aria-label="Filter by collection"><option value="">All collections</option>${collections.map(c=>`<option ${S.filter===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div><div id="quiz-list">${quizCards()}</div><div class="secondary-actions"><button class="quiet-button" data-action="sample">${icon('spark',15)} Sample quiz</button><label class="quiet-button file-label">${icon('download',15)} Import quiz<input type="file" accept="application/json,.json" id="import-quiz" aria-label="Import quiz"></label><button class="quiet-button" data-action="copy-ai-prompt">${icon('copy',15)} Copy AI prompt</button></div>`:reportList()}</main>`);
+  shell(`<main class="page"><div class="page-head"><div><h1>My quizzes</h1></div><button class="btn primary" data-action="new-quiz">${icon('plus',16)} New quiz</button></div><div class="tabs"><button class="tab ${S.dashboardTab==='quizzes'?'active':''}" data-action="dashboard-tab" data-tab="quizzes">My quizzes <span class="muted">${S.quizzes.length}</span></button><button class="tab ${S.dashboardTab==='reports'?'active':''}" data-action="dashboard-tab" data-tab="reports">Results <span class="muted">${S.reports.length}</span></button></div>${S.dashboardTab==='quizzes'?`<div id="open-rooms">${openRoomCards()}</div><div class="dashboard-tools"><div class="search-field">${icon('search',16)}<input class="input" id="quiz-search" aria-label="Search quizzes" placeholder="Find a quiz…" value="${esc(S.search)}"></div><select class="input filter-select" id="collection-filter" aria-label="Filter by collection"><option value="">All collections</option>${collections.map(c=>`<option ${S.filter===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div><div id="quiz-list">${quizCards()}</div><div class="secondary-actions"><button class="quiet-button" data-action="sample">${icon('spark',15)} Sample quiz</button><label class="quiet-button file-label">${icon('download',15)} Import quiz<input type="file" accept="application/json,.json" id="import-quiz" aria-label="Import quiz"></label><button class="quiet-button" data-action="copy-ai-prompt">${icon('copy',15)} Copy AI prompt</button></div>`:reportList()}</main>`);
 }
 function quizCards() {
   const quizzes=S.quizzes.filter(q=>(!S.filter||q.collection===S.filter)&&(!S.search||`${q.title} ${q.description} ${q.collection}`.toLowerCase().includes(S.search.toLowerCase())));
@@ -537,6 +552,10 @@ const actions = {
   'save-quiz':()=>saveQuiz(),
   'host-draft':async()=>{const d=await saveQuiz(true);await hostQuiz(d.id,d.settings);},
   'host-quiz':el=>hostQuiz(el.dataset.id),
+  'refresh-rooms':()=>loadOpenRooms(),
+  'rejoin-room':el=>{S.room={code:el.dataset.code,role:'host'};S.fatalRoomError=null;sessionStorage.setItem(`gather.host.${el.dataset.code}`,'1');location.hash=`#room/${el.dataset.code}`;},
+  'close-room':el=>confirmCloseRoom(el.dataset.code),
+  'confirm-close-room':async el=>{await backend(`/api/rooms/${el.dataset.code}`,{roomId:el.dataset.roomId},'DELETE');sessionStorage.removeItem(`gather.host.${el.dataset.code}`);if(S.room?.code===el.dataset.code){disconnectRoom();S.room=null;S.roomState=null;}closeModal();await loadOpenRooms();toast('Room closed.');},
   'export-quiz':exportQuiz,
   'select-question':el=>{S.questionIndex=Number(el.dataset.index);S.currentRoundId=questionRound(S.draft.questions[S.questionIndex].id)?.id;renderEditor();},
   'add-question':()=>{if(S.draft.questions.length>=500)throw new Error('A quiz can have up to 500 questions.');const roundId=S.currentRoundId||questionRound(S.draft.questions[S.questionIndex]?.id)?.id||S.draft.settings.rounds?.[0]?.id,q=newQuestion();S.draft.questions.push(q);if(roundId)assignQuestion(q.id,roundId);S.questionIndex=S.draft.questions.length-1;markDirty();renderEditor();},
@@ -565,8 +584,8 @@ const actions = {
   'confirm-finish':()=>{send({type:'finish'});closeModal();},
   'kick-player':el=>modal('Remove this player?',`<p>${esc(el.dataset.name)} will be removed from this quiz.</p>`,`<button class="btn danger" data-action="confirm-kick" data-id="${el.dataset.id}">Remove player</button>`),
   'confirm-kick':el=>{send({type:'kick',playerId:el.dataset.id});closeModal();},
-  'leave-room':()=>modal('Leave quiz?',`<p>${S.room.role==='host'?'Your players will stay in the room. You can come back to this tab and reconnect.':'You can rejoin from this browser while the room is still open.'}</p>`,'<button class="btn primary" data-action="confirm-leave">Leave quiz</button>'),
-  'confirm-leave':()=>{closeModal();disconnectRoom();S.room=null;S.roomState=null;S.fatalRoomError=null;location.hash='#';},
+  'leave-room':()=>modal('Leave quiz?',`<p>${S.room.role==='host'?'Players stay in the room. Rejoin or close it from My quizzes.':'You can rejoin from this browser while the room is still open.'}</p>`,'<button class="btn primary" data-action="confirm-leave">Leave quiz</button>'),
+  'confirm-leave':()=>{const host=S.room?.role==='host';closeModal();disconnectRoom();S.room=null;S.roomState=null;S.fatalRoomError=null;location.hash=host?'#dashboard':'#';},
   'choose-answer':el=>{const q=S.roomState?.question;if(!S.connected||!q||S.answerSent||S.answerPending||S.room.role==='host')return;if(q.type==='multi'){if(!Array.isArray(S.selection))S.selection=[];S.selection=S.selection.includes(el.dataset.id)?S.selection.filter(id=>id!==el.dataset.id):[...S.selection,el.dataset.id];refreshAnswerUI();}else sendAnswer(el.dataset.id);},
   'submit-multi':()=>{if(S.selection?.length)sendAnswer(S.selection);},
   'submit-order':()=>sendAnswer(S.order),
