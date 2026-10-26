@@ -29,9 +29,16 @@ function identifyingLiterals(source){
   return false;
 }
 const failures=[];
+const exclusions=spawnSync('git',['ls-files','--others','--ignored','--exclude-standard','--directory','-z'],{cwd:projectRoot,encoding:'utf8'});
+if(exclusions.status!==0)throw new Error('Could not verify local source exclusions.');
+const excludedDirectories=new Set(exclusions.stdout.split('\0').filter(name=>name.endsWith('/')).map(name=>name.slice(0,-1)));
 // Ignored local files must never enter the public Git index, even if force-added.
 const tracked=spawnSync('git',['ls-files','--cached','-z'],{cwd:projectRoot,encoding:'utf8'});
-if(tracked.status===0){
+if(tracked.status!==0)throw new Error('Could not verify the public Git index.');
+{
+ const ignoredTracked=spawnSync('git',['check-ignore','--no-index','--stdin','-z'],{cwd:projectRoot,input:tracked.stdout,encoding:'utf8'});
+ if(ignoredTracked.status!==0&&ignoredTracked.status!==1)throw new Error('Could not verify tracked-file exclusions.');
+ failures.push(...ignoredTracked.stdout.split('\0').filter(Boolean));
  for(const name of tracked.stdout.split('\0').filter(Boolean)){
   if(/^(?:tests|supabase|\.local|dist|node_modules)\//.test(name)||/(?:^|\/)chat-(?:access-)?codes[^/]*\.txt$/i.test(name)||ignoredFile(name))failures.push(name);
  }
@@ -42,7 +49,7 @@ async function scan(directory){
   if(ignored.has(entry.name))continue;
   const path=resolve(directory,entry.name),name=relative(projectRoot,path).replaceAll('\\','/');
   if(entry.isSymbolicLink())continue;
-  if(entry.isDirectory()){await scan(path);continue;}
+  if(entry.isDirectory()){if(!excludedDirectories.has(name))await scan(path);continue;}
   if(ignoredFile(name)||binary.test(name))continue;
   if((await stat(path)).size>2_000_000)continue;
   const source=await readFile(path,'utf8');

@@ -376,3 +376,10 @@
 .answer-option.letter-only .option-letter{font-size:24px;width:auto;height:auto;background:none;color:var(--accent)}
 .answer-option.letter-only .option-body,.answer-option.letter-only .option-mark{display:none}
 @media(max-width:700px){.chat-panel{height:min(100%,720px);max-height:100%}.chat-panel-head{min-height:64px;padding-bottom:10px}.chat-composer{padding-top:8px;padding-bottom:max(8px,env(safe-area-inset-bottom))}}
+
+.live-question.media-pending{visibility:hidden}
+.question-media-status{color:var(--muted);text-align:center;margin:32px 0}
+.question-media-status[hidden]{display:none}
+.live-answer-status{height:58px;flex:none;display:flex;align-items:center;justify-content:center}
+.live-answer-status .answer-result{padding:8px 14px;font-size:13px;line-height:1.4}
+.live-answer-status .answer-result,.live-answer-status .answer-note{margin:0}

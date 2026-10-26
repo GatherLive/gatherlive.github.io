@@ -177,7 +177,7 @@ function moveReordered(kind,id,to){
   if(from<0||to<0||to>=list.length||from===to)return;
   const selected=kind==='questions'?S.draft.questions[S.questionIndex]?.id:null;
   list.splice(to,0,list.splice(from,1)[0]);
-  if(kind==='player-order')renderRoom();
+  if(kind==='player-order'){const root=$('.order-list');for(const [index,id] of S.order.entries()){const row=$$('[data-reorder-item]',root).find(el=>el.dataset.reorderItem===id);if(row){root.append(row);$('.question-number',row).textContent=index+1;$$('[data-action="player-order"]',row).forEach(el=>{el.dataset.index=index;});}}refreshAnswerUI();}
   else{
     if(kind==='questions'){S.questionIndex=S.draft.questions.findIndex(item=>item.id===selected);syncRoundOrder();}
     else S.draft.questions[S.questionIndex].correct=list.map(item=>item.id);
@@ -331,9 +331,9 @@ async function openSocket() {
     } else if(data.type==='progress') {
       if(data.questionId&&data.questionId!==S.roomState?.question?.id)return;
       if(S.roomState)S.roomState.answerCount=data.answerCount;
-      $$('[data-answer-count]').forEach(el=>el.textContent=data.answerCount);if(data.me?.answered){S.answerSent=true;S.answerPending=false;}
+      $$('[data-answer-count]').forEach(el=>el.textContent=data.answerCount);if(data.me?.answered){S.answerSent=true;S.answerPending=false;refreshAnswerUI();}
     } else if(data.type==='answer_ack') {
-      S.answerPending=false;if(data.accepted||data.answered){S.answerSent=true;sessionStorage.setItem(`gather.answer.${room.code}.${data.questionId}`,JSON.stringify({answer:S.selection}));renderRoom();}else{toast(data.message||'Your answer could not be accepted.',true);renderRoom();}
+      S.answerPending=false;if(data.accepted||data.answered){S.answerSent=true;sessionStorage.setItem(`gather.answer.${room.code}.${data.questionId}`,JSON.stringify({answer:S.selection}));refreshAnswerUI();}else{toast(data.message||'Your answer could not be accepted.',true);refreshAnswerUI();}
     } else if(data.type==='draw') {if(S.roomState)S.roomState.winners=data.winners;renderRoom();}
     else if(data.type==='error') {
       S.answerPending=false;toast(data.message||'Something went wrong. Please try again.',true);
@@ -363,28 +363,49 @@ function fitChoiceQuestion(){
 function hydrateRoomImages(){
   const images=$$('img[data-room-image]');S.images?.retain(images.map(img=>img.dataset.roomImage));
   const section=$('.live-question'),controls=section?$$('button,input,textarea',section).map(el=>[el,el.disabled]):[];
-  const sync=()=>{if(!section?.isConnected)return;const waiting=images.some(img=>img.isConnected&&img.dataset.ready!=='true');section.setAttribute('aria-busy',String(images.some(img=>img.classList.contains('loading-image'))));for(const[el,disabled]of controls)el.disabled=disabled||!S.connected||waiting;};
+  const sync=()=>{if(!section?.isConnected)return;const waiting=images.some(img=>img.isConnected&&img.dataset.ready!=='true');const failed=images.some(img=>img.classList.contains('image-failed'));section.setAttribute('aria-busy',String(waiting));section.classList.toggle('media-pending',waiting&&!failed);section.inert=waiting&&!failed;const loading=$('.question-media-status');if(loading){loading.hidden=!waiting;loading.textContent=failed?'Image unavailable. Retry to continue.':'Preparing images…';}for(const[el,disabled]of controls)el.disabled=disabled||!S.connected||waiting;if(S.roomState?.phase==='question')refreshAnswerUI();};
   sync();
   for(const img of images){
     if(img.dataset.ready==='true')continue;
     const source=img.dataset.roomImage;
-    void Promise.resolve(S.images?.source(source)||source).then(url=>{
+    const failed=()=>{
       if(!img.isConnected)return;
-      img.onload=()=>{img.classList.remove('loading-image');img.dataset.ready='true';sync();};
-      img.onerror=()=>{if(!img.isConnected)return;img.classList.remove('loading-image');img.classList.add('image-failed');img.alt='Image unavailable';sync();const retry=document.createElement('button');retry.className='quiet-button image-retry';retry.type='button';retry.textContent='Retry image';retry.onclick=event=>{event.stopPropagation();retry.remove();img.classList.remove('image-failed');img.classList.add('loading-image');img.src=url+(url.startsWith('blob:')?'':(url.includes('?')?'&':'?')+'retry='+Date.now());};(img.closest('button')?.closest('.answer-grid')||img).after(retry);};
-      img.src=url;
-    }).catch(()=>{if(img.isConnected){img.classList.remove('loading-image');img.alt='Image unavailable';}});
+      img.classList.remove('loading-image');img.classList.add('image-failed');img.alt='Image unavailable';sync();
+      const retry=document.createElement('button');retry.className='quiet-button image-retry';retry.type='button';retry.textContent='Retry image';
+      retry.onclick=event=>{event.stopPropagation();retry.remove();img.classList.remove('image-failed');img.classList.add('loading-image');sync();load(true);};
+      (img.closest('button')?.closest('.answer-grid')||img).after(retry);
+    };
+    const load=(retry=false)=>void Promise.resolve(S.images?.source(source)||source).then(url=>{
+      if(!img.isConnected)return;
+      img.onload=()=>{img.classList.remove('loading-image');img.dataset.ready='true';sync();};img.onerror=failed;
+      img.src=url+(retry&&!url.startsWith('blob:')?(url.includes('?')?'&':'?')+'retry='+Date.now():'');
+    }).catch(failed);
+    load();
   }
 }
 function send(command) {
   if(!S.connected||S.ws?.readyState!==WebSocket.OPEN){toast('Waiting for your connection to return.',true);return false;}
   S.ws.send(JSON.stringify(command));return true;
 }
+function answerStatus(q,isHost=false) {
+  if(isHost||q.type==='slide')return '';
+  return `<div class="live-answer-status" role="status">${S.answerSent?`<div class="answer-result neutral">${icon('check',19)} Answer received</div>`:S.answerPending?'<p class="answer-note"><span class="spinner"></span> Sending…</p>':['multi','order','pin'].includes(q.type)?`<p class="answer-note">${q.type==='multi'?'Select all correct answers':q.type==='order'?'Arrange in order':'Tap a location'}</p>`:''}</div>`;
+}
+function refreshAnswerUI() {
+  const st=S.roomState,q=st?.question,section=$('.live-question');
+  if(st?.phase!=='question'||!q||!section||S.room?.role==='host')return;
+  const blocked=!S.connected||S.answerSent||S.answerPending||section.getAttribute('aria-busy')==='true';
+  $$('[data-action="choose-answer"]',section).forEach(el=>{const selected=Array.isArray(S.selection)?S.selection.includes(el.dataset.id):S.selection===el.dataset.id;el.classList.toggle('selected',selected);el.setAttribute('aria-pressed',String(selected));el.disabled=blocked;const mark=$('.option-mark',el);if(mark)mark.textContent=selected?'●':'';});
+  $$('[data-action^="submit-"],.text-answer button,#player-text,#player-slider,[data-reorder-handle],[data-action="player-order"]',section).forEach(el=>{
+    const action=el.dataset.action;el.disabled=blocked||(action==='submit-multi'&&!S.selection?.length)||(action==='submit-pin'&&!S.pin)||(action==='player-order'&&(Number(el.dataset.index)+Number(el.dataset.direction)<0||Number(el.dataset.index)+Number(el.dataset.direction)>=S.order.length));
+  });
+  const status=$('.live-answer-status',section);if(status){const next=document.createElement('template');next.innerHTML=answerStatus(q);if(status.innerHTML!==next.content.firstElementChild.innerHTML)status.innerHTML=next.content.firstElementChild.innerHTML;}
+}
 function sendAnswer(answer) {
   if(!S.connected||S.answerSent||S.answerPending||S.roomState?.phase!=='question')return;
   const questionId=S.roomState.question.id,attempt=S.answerAttempt=(S.answerAttempt||0)+1;
   S.selection=answer;S.answerPending=true;
-  if(send({type:'answer',questionId,answer})){renderRoom();setTimeout(()=>{if(S.answerPending&&S.answerAttempt===attempt&&S.roomState?.question?.id===questionId){S.answerPending=false;renderRoom();toast('Your answer has not been confirmed. Tap to retry.',true);}},7000);}else{S.answerPending=false;renderRoom();}
+  if(send({type:'answer',questionId,answer})){refreshAnswerUI();setTimeout(()=>{if(S.answerPending&&S.answerAttempt===attempt&&S.roomState?.question?.id===questionId){S.answerPending=false;refreshAnswerUI();toast('Your answer has not been confirmed. Tap to retry.',true);}},7000);}else{S.answerPending=false;refreshAnswerUI();}
 }
 function renderRoom() {
   S.reorder?.cancel();
@@ -418,7 +439,7 @@ function questionView(st,isHost) {
   const q=st.question;if(!q)return `<div class="loading-section">Waiting…</div>`;
   const reveal=st.phase==='reveal',answerable=!isHost&&!reveal&&!S.answerSent&&!S.answerPending,hasOptions=['single','multi','true_false','poll'].includes(q.type),round=st.round,roundEnd=st.settings?.roundsEnabled&&round&&round.questionIndex+1>=round.questionCount;
   const progress=st.settings?.roundsEnabled&&round?`${round.questionIndex+1} / ${round.questionCount}`:`${st.questionIndex+1} / ${st.totalQuestions}`;
-  return `<main class="${reveal?'reveal-screen':'live-question-screen'+(hasOptions&&q.options.some(o=>safeImage(o.image))?' live-choice-screen':'')}" style="--answer-rows:${hasOptions?Math.ceil(q.options.length/2):1}"><div class="question-top"><div class="question-progress">${roundLabel(st)}<span>Question <b>${progress}</b></span></div><div class="row">${isHost?`<span class="small muted"><span data-answer-count>${st.answerCount||0}</span> / ${st.participantCount??st.players?.length??0}</span>`:''}<div class="timer ${reveal?'sr-only':''}" id="live-timer">${icon('clock',14)}<span>—</span></div></div></div>${!reveal?'<div class="timer-track"><div id="timer-fill"></div></div>':''}<section class="live-question"><h1 id="live-question-title" tabindex="-1">${esc(q.prompt)}</h1>${reveal?revealView(st,isHost):`${q.type!=='pin'&&safeImage(q.image)?roomImage(q.image,'live-question-image','Question image'):''}${hasOptions?`${!isHost&&st.settings?.showAnswerOptions===false?'<p class="answer-note">Use the host’s screen to read the choices.</p>':''}<div class="answer-grid ${q.options.some(o=>safeImage(o.image))?'image-choice-grid':''}">${q.options.map((o,i)=>answerOption(o,i,st,isHost,answerable)).join('')}</div>${q.type==='multi'&&answerable?`<button class="btn primary" data-action="submit-multi" ${Array.isArray(S.selection)&&S.selection.length?'':'disabled'}>Submit ${icon('check',16)}</button>`:''}`:q.type==='order'?orderView(q,st,isHost,answerable):q.type==='slider'?sliderView(q,st,isHost,answerable):q.type==='pin'?pinView(q,st,isHost,answerable):q.type==='slide'?'':textAnswerView(q,st,isHost,answerable)}${!isHost&&q.type!=='slide'?S.answerSent?`<div class="answer-result neutral" role="status">${icon('check',19)} Answer received</div>`:S.answerPending?'<p class="answer-note"><span class="spinner"></span> Sending…</p>':(['multi','order','pin'].includes(q.type)?`<p class="answer-note">${q.type==='multi'?'Select all correct answers':q.type==='order'?'Arrange in order':'Tap a location'}</p>`:''):''}`}</section>${isHost?`<div class="host-controls"><button class="quiet-button" data-action="room-finish">End quiz</button>${reveal?`<button class="btn primary" data-action="room-next" data-needs-connection>${roundEnd?'Round results':st.questionIndex+1>=st.totalQuestions?'Results':'Next question'} ${icon('arrow',16)}</button>`:`<button class="btn primary" data-action="room-reveal" data-needs-connection>${q.type==='slide'?'Continue':'Reveal answer'} ${icon('arrow',16)}</button>`}</div>`:''}</main>`;
+  return `<main class="${reveal?'reveal-screen':'live-question-screen'+(hasOptions&&q.options.some(o=>safeImage(o.image))?' live-choice-screen':'')}" style="--answer-rows:${hasOptions?Math.ceil(q.options.length/2):1}"><div class="question-top"><div class="question-progress">${roundLabel(st)}<span>Question <b>${progress}</b></span></div><div class="row">${isHost?`<span class="small muted"><span data-answer-count>${st.answerCount||0}</span> / ${st.participantCount??st.players?.length??0}</span>`:''}<div class="timer ${reveal?'sr-only':''}" id="live-timer">${icon('clock',14)}<span>—</span></div></div></div>${!reveal?'<div class="timer-track"><div id="timer-fill"></div></div><p class="question-media-status" role="status" hidden></p>':''}<section class="live-question"><h1 id="live-question-title" tabindex="-1">${esc(q.prompt)}</h1>${reveal?revealView(st,isHost):`${q.type!=='pin'&&safeImage(q.image)?roomImage(q.image,'live-question-image','Question image'):''}${hasOptions?`${!isHost&&st.settings?.showAnswerOptions===false?'<p class="answer-note">Use the host’s screen to read the choices.</p>':''}<div class="answer-grid ${q.options.some(o=>safeImage(o.image))?'image-choice-grid':''}">${q.options.map((o,i)=>answerOption(o,i,st,isHost,answerable)).join('')}</div>${q.type==='multi'&&answerable?`<button class="btn primary" data-action="submit-multi" ${Array.isArray(S.selection)&&S.selection.length?'':'disabled'}>Submit ${icon('check',16)}</button>`:''}`:q.type==='order'?orderView(q,st,isHost,answerable):q.type==='slider'?sliderView(q,st,isHost,answerable):q.type==='pin'?pinView(q,st,isHost,answerable):q.type==='slide'?'':textAnswerView(q,st,isHost,answerable)}${answerStatus(q,isHost)}`}</section>${isHost?`<div class="host-controls"><button class="quiet-button" data-action="room-finish">End quiz</button>${reveal?`<button class="btn primary" data-action="room-next" data-needs-connection>${roundEnd?'Round results':st.questionIndex+1>=st.totalQuestions?'Results':'Next question'} ${icon('arrow',16)}</button>`:`<button class="btn primary" data-action="room-reveal" data-needs-connection>${q.type==='slide'?'Continue':'Reveal answer'} ${icon('arrow',16)}</button>`}</div>`:''}</main>`;
 }
 function answerOption(o,i,st,isHost,answerable) {
   const q=st.question,reveal=st.phase==='reveal',correct=reveal&&st.reveal?.correct?.includes(o.id),selected=Array.isArray(S.selection)?S.selection.includes(o.id):S.selection===o.id;
@@ -546,7 +567,7 @@ const actions = {
   'confirm-kick':el=>{send({type:'kick',playerId:el.dataset.id});closeModal();},
   'leave-room':()=>modal('Leave quiz?',`<p>${S.room.role==='host'?'Your players will stay in the room. You can come back to this tab and reconnect.':'You can rejoin from this browser while the room is still open.'}</p>`,'<button class="btn primary" data-action="confirm-leave">Leave quiz</button>'),
   'confirm-leave':()=>{closeModal();disconnectRoom();S.room=null;S.roomState=null;S.fatalRoomError=null;location.hash='#';},
-  'choose-answer':el=>{const q=S.roomState?.question;if(!S.connected||!q||S.answerSent||S.answerPending||S.room.role==='host')return;if(q.type==='multi'){if(!Array.isArray(S.selection))S.selection=[];S.selection=S.selection.includes(el.dataset.id)?S.selection.filter(id=>id!==el.dataset.id):[...S.selection,el.dataset.id];renderRoom();}else sendAnswer(el.dataset.id);},
+  'choose-answer':el=>{const q=S.roomState?.question;if(!S.connected||!q||S.answerSent||S.answerPending||S.room.role==='host')return;if(q.type==='multi'){if(!Array.isArray(S.selection))S.selection=[];S.selection=S.selection.includes(el.dataset.id)?S.selection.filter(id=>id!==el.dataset.id):[...S.selection,el.dataset.id];refreshAnswerUI();}else sendAnswer(el.dataset.id);},
   'submit-multi':()=>{if(S.selection?.length)sendAnswer(S.selection);},
   'submit-order':()=>sendAnswer(S.order),
   'submit-slider':()=>sendAnswer(Number($('#player-slider')?.value??S.selection)),
@@ -565,7 +586,7 @@ document.addEventListener('click',async event=>{
   const el=event.target.closest('[data-action]');if(!el||el.disabled)return;if(S.chat?.handleAction(el.dataset.action,el)){event.preventDefault();return;}const action=actions[el.dataset.action];if(!action)return;event.preventDefault();
   try {const result=action(el);if(result&&typeof result.then==='function'){el.disabled=true;await result;}}
   catch(error){toast(error.message||'Something went wrong. Please try again.',true);if(el.dataset.action==='confirm-delete-account'&&$('#delete-error'))$('#delete-error').innerHTML=`<div class="error-note">${esc(error.message)}</div>`;}
-  finally {if(el.isConnected&&!['submit-multi','submit-pin'].includes(el.dataset.action))el.disabled=false;}
+  finally {if(el.isConnected){if(el.closest('.live-question'))refreshAnswerUI();else if(!['submit-multi','submit-pin'].includes(el.dataset.action))el.disabled=false;}}
 });
 document.addEventListener('input',event=>{
   const el=event.target;
@@ -631,7 +652,7 @@ document.addEventListener('submit',async event=>{
     else if(form.id==='draw-form'){send({type:'draw',mode:$('#draw-mode').value,count:Number($('#draw-count').value)});}
     else if(form.id==='password-form'){await authRequest('user',{password:$('#new-password').value},'PUT',await getToken());form.reset();toast('Your password has been updated.');}
   }catch(error){const target=form.id==='account-chat-form'?$('#account-chat-error'):$('#form-error');if(target)target.innerHTML=`<div class="error-note">${esc(error.message)}</div>`;else toast(error.message,true);}
-  finally{if(button?.isConnected){button.disabled=false;button.innerHTML=original;}}
+  finally{if(button?.isConnected){button.innerHTML=original;if(form.id==='text-answer-form')refreshAnswerUI();else button.disabled=false;}}
 });
 document.addEventListener('keydown',event=>{
   if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing&&event.target.id==='chat-input'){event.preventDefault();if(!S.chat?.sending&&event.target.value.trim())$('#chat-form')?.requestSubmit();return;}
