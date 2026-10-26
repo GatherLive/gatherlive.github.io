@@ -124,6 +124,15 @@
 .chat-message-actions{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;border-top:1px solid #ffffff12;padding-top:6px}
 .chat-message-actions button{background:#0002;border:0;border-radius:16px;padding:7px 9px;color:inherit;font-size:11px;min-height:34px;display:inline-flex;align-items:center;gap:5px}
 .chat-message-actions button:hover{background:#0003}
+.chat-message-actions .chat-reply-button{min-height:44px;min-width:44px;padding:0 14px;gap:7px;border-radius:22px;background:#3d3450;color:#e8def8;font-size:12px;font-weight:600;transition:background-color .16s ease,border-radius .16s ease}
+.chat-message-actions .chat-reply-button svg{flex:none}
+.chat-message-actions .chat-reply-button:hover{background:#4b405e}
+.chat-message.own .chat-reply-button{background:#b9a7dc;color:#2b1d3e}
+.chat-message.own .chat-reply-button:hover{background:#af99d6}
+.chat-message.own .chat-reply-button:focus-visible{outline-color:#3c2c54}
+.chat-message-actions .chat-reply-button:active{border-radius:14px}
+@media(prefers-reduced-motion:reduce){.chat-message-actions .chat-reply-button{transition:none}}
+
 .chat-reactions,.chat-emoji-picker{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
 .chat-reactions button{padding:3px 7px;background:#161616;border:1px solid #48414e;border-radius:16px;font-size:14px;min-height:30px;color:var(--text)}
 .chat-reactions button span{font-size:10px;color:var(--soft)}
