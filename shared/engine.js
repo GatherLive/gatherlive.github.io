@@ -161,7 +161,7 @@ function settingsFrom(raw = {}, questions = []) {
     }
     if (assigned.size !== questions.length) fail('INVALID_SETTINGS', 'Assign each question to exactly one round.');
   }
-  return { shuffleQuestions: boolean('shuffleQuestions', false), shuffleOptions: boolean('shuffleOptions', false), scoring, allowLateJoin: boolean('allowLateJoin', true), showLeaderboard: boolean('showLeaderboard', true), showQuestionType: boolean('showQuestionType', false), participantLimit, questionDelay, roundsEnabled, rounds, ...chatSettings(raw) };
+  return { shuffleQuestions: boolean('shuffleQuestions', false), shuffleOptions: boolean('shuffleOptions', false), scoring, allowLateJoin: boolean('allowLateJoin', true), showLeaderboard: boolean('showLeaderboard', true), showQuestionType: boolean('showQuestionType', false), showAnswerOptions: boolean('showAnswerOptions', true), participantLimit, questionDelay, roundsEnabled, rounds, ...chatSettings(raw) };
 }
 
 export class RoomEngine {
@@ -527,6 +527,9 @@ export class RoomEngine {
       question = clone(publicQuestion);
       if (revealed) Object.assign(question, clone({ ...(correct ? { correct } : {}), ...(acceptedAnswers ? { acceptedAnswers } : {}), ...(target != null ? { target } : {}), ...(tolerance != null ? { tolerance } : {}), explanation }));
     }
+    if (question && !forHost && !revealed && !this.settings.showAnswerOptions && ['single','multi','true_false','poll'].includes(q.type)) {
+      question.options = question.options.map(option => ({id:option.id,text:'',image:''}));
+    }
     const visiblePlayers = [];
     const visibleLimit = forHost ? this.players.size : this.phase === 'lobby' ? 50 : 10;
     for (const player of this.players.values()) {
@@ -543,6 +546,7 @@ export class RoomEngine {
     if (this.phase === 'countdown' && this.settings.showQuestionType && q) {
       result.questionHint = { type: q.type, hasImage: !!(q.image || q.options?.some(option => option.image)) };
     }
+    if(media&&this.phase!=='question')result.imageManifest=this.phase==='finished'?[]:this.imageManifest();
     const me = this._me(playerId);
     if (me) result.me = me;
     if(conversation){result.chat=this.conversation.metadata(this.phase);result.announcement=this.conversation.visibleAnnouncement(this.phase);}

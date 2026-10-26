@@ -7,9 +7,21 @@ export class RoomChat {
     this.messages=[];this.announcement=null;this.revision=-1;this.meta=null;this.open=false;this.draft='';this.replyTo=null;this.emojiFor=null;this.menuFor=null;this.pending=new Map();this.unread=0;this.sending=false;
     try{this.hidden=localStorage.getItem('gather.chat.hidden')==='true';}catch{this.hidden=false;}
     this.viewport=()=>{const overlay=document.querySelector('.chat-overlay');if(overlay&&window.visualViewport){overlay.style.height=window.visualViewport.height+'px';overlay.style.top=window.visualViewport.offsetTop+'px';}};
+    this.keepKeyboard=event=>{if(event.target.closest('#chat-form button[type="submit"]')&&document.activeElement?.id==='chat-input')event.preventDefault();};
     window.visualViewport?.addEventListener('resize',this.viewport);
+    window.visualViewport?.addEventListener('scroll',this.viewport);
+    window.addEventListener('resize',this.viewport);
+    document.addEventListener('pointerdown',this.keepKeyboard);
   }
-  destroy() {window.visualViewport?.removeEventListener('resize',this.viewport);for(const item of this.pending.values()){clearTimeout(item.timer);item.reject(new Error('Connection closed.'));}this.pending.clear();this.open=false;}
+  destroy() {this.close();document.querySelector('#room-chat-root')?.replaceChildren();window.visualViewport?.removeEventListener('resize',this.viewport);window.visualViewport?.removeEventListener('scroll',this.viewport);window.removeEventListener('resize',this.viewport);document.removeEventListener('pointerdown',this.keepKeyboard);for(const item of this.pending.values()){clearTimeout(item.timer);item.reject(new Error('Connection closed.'));}this.pending.clear();}
+  lockPage(locked) {
+    if(locked&&!this.pageLock){
+      const style=document.body.style;this.pageLock={y:window.scrollY,position:style.position,top:style.top,width:style.width,overflow:style.overflow};
+      Object.assign(style,{position:'fixed',top:-this.pageLock.y+'px',width:'100%',overflow:'hidden'});
+    }else if(!locked&&this.pageLock){
+      const {y,...style}=this.pageLock;this.pageLock=null;Object.assign(document.body.style,style);window.scrollTo(0,y);
+    }
+  }
   setState(room) {
     this.meta=room?.chat??null;this.announcement=room?.announcement??null;
     if(['countdown','question','finished'].includes(room?.phase)&&document.querySelector('#announcement-form'))this.closeModal();
@@ -80,21 +92,31 @@ export class RoomChat {
   panel() {
     if(!this.open||this.hidden||!this.available())return '';
     const parent=this.replyTo&&this.messages.find(item=>item.id===this.replyTo&&!item.deleted),count=this.state().roomState?.participantCount??0;
-    return `<div class="chat-overlay"><div class="chat-backdrop" data-action="chat-close"></div><aside class="chat-panel" role="dialog" aria-modal="true" aria-labelledby="chat-title" tabindex="-1"><header class="chat-panel-head"><span class="chat-header-mark">${this.icon('chat',23)}</span><div class="chat-header-copy"><h2 id="chat-title">Room chat</h2><p>${count} player${count===1?'':'s'}</p></div><button class="icon-btn" data-action="chat-hide" aria-label="Hide chat" title="Hide chat">${this.icon('hide',17)}</button><button class="icon-btn" data-action="chat-close" aria-label="Close chat">${this.icon('close',18)}</button></header><div class="chat-messages" role="log" aria-label="Messages" aria-live="polite" aria-relevant="additions text">${this.messages.length?this.messages.map((item,index)=>this.messageView(item,index)).join(''):`<div class="chat-empty">${this.icon('chat',30)}<p>Say hello</p></div>`}</div><form id="chat-form" class="chat-composer">${parent?`<div class="chat-reply-preview"><div><strong>Reply to ${esc(parent.senderName)}</strong><span>${esc(parent.text.slice(0,80))}</span></div><button type="button" class="icon-btn" data-action="chat-cancel-reply" aria-label="Cancel reply">${this.icon('close',14)}</button></div>`:''}<div class="chat-compose-row"><label class="sr-only" for="chat-input">Message</label><textarea id="chat-input" placeholder="Message" maxlength="400" rows="1" required ${this.sending||!this.state().connected?'disabled':''}>${esc(this.draft)}</textarea><button class="btn primary" type="submit" aria-label="Send message" ${this.sending||!this.state().connected?'disabled':''}>${this.icon('send',19)}</button></div></form></aside></div>`;
+    return `<div class="chat-overlay"><div class="chat-backdrop" data-action="chat-close"></div><aside class="chat-panel" role="dialog" aria-modal="true" aria-labelledby="chat-title" tabindex="-1"><header class="chat-panel-head"><span class="chat-header-mark">${this.icon('chat',23)}</span><div class="chat-header-copy"><h2 id="chat-title">Room chat</h2><p>${count} player${count===1?'':'s'}</p></div><button class="icon-btn" data-action="chat-hide" aria-label="Hide chat" title="Hide chat">${this.icon('hide',17)}</button><button class="icon-btn" data-action="chat-close" aria-label="Close chat">${this.icon('close',18)}</button></header><div class="chat-messages" role="log" aria-label="Messages" aria-live="polite" aria-relevant="additions text">${this.messages.length?this.messages.map((item,index)=>this.messageView(item,index)).join(''):`<div class="chat-empty">${this.icon('chat',30)}<p>Say hello</p></div>`}</div><form id="chat-form" class="chat-composer"><div class="chat-reply-slot">${parent?`<div class="chat-reply-preview"><div><strong>Reply to ${esc(parent.senderName)}</strong><span>${esc(parent.text.slice(0,80))}</span></div><button type="button" class="icon-btn" data-action="chat-cancel-reply" aria-label="Cancel reply">${this.icon('close',14)}</button></div>`:''}</div><div class="chat-compose-row"><label class="sr-only" for="chat-input">Message</label><textarea id="chat-input" placeholder="Message" maxlength="400" rows="1" required enterkeyhint="send">${esc(this.draft)}</textarea><button class="btn primary" type="submit" aria-label="Send message" ${this.sending||!this.state().connected?'disabled':''}>${this.icon('send',19)}</button></div></form></aside></div>`;
   }
   refresh() {
     const tools=document.querySelector('#room-tools');if(tools){tools.innerHTML=this.tools();tools.hidden=!tools.innerHTML;}
     const announcement=document.querySelector('#room-announcement');if(announcement)announcement.innerHTML=this.announcementView();
     const root=document.querySelector('#room-chat-root');if(!root)return;
-    const input=document.querySelector('#chat-input'),focused=document.activeElement===input,start=input?.selectionStart,end=input?.selectionEnd;
     const list=document.querySelector('.chat-messages'),scroll=list?.scrollTop??0,atBottom=!list||list.scrollHeight-list.clientHeight-list.scrollTop<70;
-    root.innerHTML=this.panel();
+    const markup=this.panel();this.lockPage(!!markup);
+    if(!markup){root.replaceChildren();return;}
+    // Keep the focused textarea mounted: replacing it dismisses iOS keyboards
+    // and interrupts composition, even when focus is immediately restored.
+    if(!root.firstElementChild)root.innerHTML=markup;
+    else {
+      const template=document.createElement('template');template.innerHTML=markup;
+      for(const selector of ['.chat-header-copy p','.chat-messages','.chat-reply-slot']){
+        const current=root.querySelector(selector),next=template.content.querySelector(selector);
+        if(current&&next&&current.innerHTML!==next.innerHTML)current.innerHTML=next.innerHTML;
+      }
+    }
     this.viewport();
     const next=document.querySelector('.chat-messages');if(next)next.scrollTop=atBottom?next.scrollHeight:scroll;
-    const compose=document.querySelector('#chat-input');if(compose){compose.style.height='auto';compose.style.height=Math.min(140,compose.scrollHeight)+'px';}
-    if(focused){const next=document.querySelector('#chat-input');next?.focus({preventScroll:true});next?.setSelectionRange(start,end);}
+    const compose=document.querySelector('#chat-input');if(compose){if(compose.value!==this.draft)compose.value=this.draft;compose.style.height='auto';compose.style.height=Math.min(140,compose.scrollHeight)+'px';}
+    const send=root.querySelector('button[type="submit"]');if(send){send.disabled=this.sending||!this.state().connected;send.setAttribute('aria-busy',String(this.sending));}
   }
-  close() {if(document.activeElement?.closest('.chat-panel'))document.activeElement.blur();this.open=false;this.emojiFor=null;this.menuFor=null;}
+  close() {if(document.activeElement?.closest('.chat-panel'))document.activeElement.blur();this.open=false;this.emojiFor=null;this.menuFor=null;this.lockPage(false);}
   settings() {
     if(this.state().roomState?.phase==='finished')return;
     const config=this.meta??{};
@@ -134,8 +156,9 @@ export class RoomChat {
   }
   async submit(form) {
     if(form.id==='chat-form'){
-      this.sending=true;this.refresh();
-      try{await this.request('chat_send',{text:this.draft,replyTo:this.replyTo});this.draft='';this.replyTo=null;}
+      if(this.sending||!this.state().connected||!this.draft.trim())return;
+      const text=this.draft,replyTo=this.replyTo;this.sending=true;this.refresh();
+      try{await this.request('chat_send',{text,replyTo});if(this.draft===text)this.draft='';if(this.replyTo===replyTo)this.replyTo=null;}
       finally{this.sending=false;this.refresh();document.querySelector('#chat-input')?.focus({preventScroll:true});}
     }else if(form.id==='chat-unlock-form'){
       await this.request('chat_unlock',{code:document.querySelector('#chat-unlock-code').value});this.closeModal();this.settings();
