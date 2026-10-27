@@ -1,7 +1,7 @@
 import {DurableObject} from 'cloudflare:workers';
 import {RoomEngine} from '../shared/engine.js';
 import {emptyLearningProgress,mergeLearningProgress,resetLearningProgress} from '../shared/learning-progress.js';
-import {RoomMedia} from '../shared/media.js';
+import {RoomMedia,mediaRange} from '../shared/media.js';
 import {RoomConversation,CONVERSATION_COMMANDS} from '../shared/conversation.js';
 import {chatCodeRequest,chatOwnerKey,redeemChatCode,CHAT_ACCESS_REGISTRY} from '../shared/chat-access.js';
 import {handleApi, originAllowed, json, HttpError, responseHeaders} from '../shared/api.js';
@@ -15,7 +15,7 @@ function chunks(text){const values=[];for(let start=0;start<text.length;){let en
 export class GiveawayRoom extends DurableObject {
   constructor(ctx,env) {
     super(ctx,env);
-    this.ctx=ctx;this.env=env;this.engine=null;this.meta=null;this.joinBroadcast=null;this.progressTimer=null;this.purging=null;this.hostSockets=new Set();this.media=new RoomMedia();
+    this.ctx=ctx;this.env=env;this.engine=null;this.meta=null;this.joinBroadcast=null;this.progressTimer=null;this.mediaProgressTimer=null;this.purging=null;this.hostSockets=new Set();this.media=new RoomMedia();
     ctx.blockConcurrencyWhile(async()=>{
       this.initializeStorage();
       const row=ctx.storage.sql.exec('SELECT state,meta FROM checkpoint WHERE id=1').toArray()[0];
@@ -32,6 +32,7 @@ export class GiveawayRoom extends DurableObject {
         for(const player of ctx.storage.sql.exec('SELECT id,data FROM players').toArray())this.engine.restorePlayer(JSON.parse(player.data==='null'?(playerParts.get(player.id)||[]).join(''):player.data));
         if(this.engine.phase==='finished'&&(saved.conversation?.messages?.length||saved.conversation?.announcement))this.checkpoint();
       }
+      if(this.engine?.mediaGate?.hostRequired)this.engine.mediaGate.hostReady=ctx.getWebSockets().some(ws=>{const id=ws.deserializeAttachment();return id?.role==='host'&&!id.superseded&&id.roomId===this.meta?.reportId&&id.mediaReadyToken===this.engine.mediaGate.token;});
       this.hostSockets=new Set(ctx.getWebSockets().filter(ws=>{const identity=ws.deserializeAttachment();return identity?.role==='host'&&!identity.superseded&&identity.roomId===this.meta?.reportId;}));
       ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping','pong'));
       if(this.engine){
@@ -169,7 +170,7 @@ export class GiveawayRoom extends DurableObject {
     }catch(error){return json({error:error.message},error.status || 500);}
   }
   send(ws,body) {try{ws.send(JSON.stringify(body));}catch{}}
-  sendState(ws,identity) {this.send(ws,{type:'state',state:this.engine.snapshot(identity.role==='host',identity.playerId,{media:identity.mediaVersion===1,conversation:identity.conversationVersion===1})});}
+  sendState(ws,identity) {this.send(ws,{type:'state',state:this.engine.snapshot(identity.role==='host',identity.playerId,{media:identity.mediaVersion||false,conversation:identity.conversationVersion===1})});}
   sendConversation(ws,identity) {if(identity.conversationVersion===1)this.send(ws,{type:'conversation',state:this.engine.conversation.snapshot(identity,this.engine.phase)});}
   broadcastConversation(event) {
     if(!this.engine||this.engine.phase==='finished')return;
@@ -187,6 +188,9 @@ export class GiveawayRoom extends DurableObject {
       const progress={...this.engine.progress(),questionId:this.engine.question?.id};
       for(const host of this.hostSockets)this.send(host,progress);
     },50);
+  }
+  broadcastMediaProgress(){
+    if(this.mediaProgressTimer)return;this.mediaProgressTimer=setTimeout(()=>{this.mediaProgressTimer=null;if(this.engine?.phase!=='countdown')return;for(const host of this.hostSockets)this.send(host,{type:'media_progress',...this.engine.mediaStatus()});},100);
   }
   broadcast() {
     if(!this.engine)return;
@@ -272,6 +276,9 @@ export class GiveawayRoom extends DurableObject {
         const {event,channel,...ack}=result;
         if(event){this.saveConversation();this.broadcastConversation(event);}
         this.send(ws,ack);
+      }else if(message.type==='media_ready'){
+        if(result.changed&&identity.role==='host'){identity.mediaReadyToken=message.token;ws.serializeAttachment(identity);}
+        await persistTransition();if(result.changed&&identity.playerId)this.savePlayer(identity.playerId);this.send(ws,{type:result.type,token:result.token});if(result.changed)this.broadcastMediaProgress();
       }else if(message.type==='answer'){
         await persistTransition();
         this.savePlayer(identity.playerId);
@@ -294,7 +301,7 @@ export class GiveawayRoom extends DurableObject {
   async webSocketClose(ws) {
     this.hostSockets.delete(ws);
     const identity=ws.deserializeAttachment();
-    if(this.engine && !this.purging && identity?.playerId && identity.roomId===this.meta.reportId){this.engine.disconnect(identity.playerId);this.savePlayer(identity.playerId);this.broadcastJoins();}
+    if(this.engine && !this.purging && !identity?.superseded && identity?.playerId && identity.roomId===this.meta.reportId){this.engine.disconnect(identity.playerId);if(this.engine.tick()){this.checkpoint();this.broadcast();await this.schedule();}else this.savePlayer(identity.playerId);this.broadcastJoins();}
     try{ws.close(1000,'Connection closed.');}catch{}
   }
   async webSocketError(ws){await this.webSocketClose(ws);}
@@ -426,18 +433,19 @@ export default {
     const isSocket=/^\/api\/rooms\/\d{6}\/ws$/.test(url.pathname) && request.method==='GET';
     const isMedia=/^\/api\/rooms\/\d{6}\/media\/[a-f0-9-]{36}(?:\/plain)?$/.test(url.pathname) && request.method==='GET';
     const cacheKey=isMedia&&!url.pathname.endsWith('/plain')?new Request(url.origin+url.pathname):null;
-    if(cacheKey){try{const cached=await caches.default.match(cacheKey);if(cached)return responseHeaders(request,env,cached);}catch{/* Caching must not block an image. */}}
+    if(cacheKey){try{const cached=await caches.default.match(cacheKey);if(cached)return responseHeaders(request,env,mediaRange(cached,request));}catch{/* Caching must not block an image. */}}
     if(!['/api/health','/api/config'].includes(url.pathname)){
       const ip=request.headers.get('CF-Connecting-IP') || 'unknown';
       // Large groups on one Wi-Fi share an IP. Keep host API and guest joins separate.
-      const limiter=isSocket||isMedia ? env.CONNECTION_LIMITER : env.API_LIMITER;
+      const isMediaPreflight=request.method==='OPTIONS'&&/^\/api\/rooms\/\d{6}\/media\/[a-f0-9-]{36}(?:\/plain)?$/.test(url.pathname);
+      const limiter=isSocket||isMedia||isMediaPreflight ? env.CONNECTION_LIMITER : env.API_LIMITER;
       if(limiter && !(await limiter.limit({key:ip})).success)return responseHeaders(request,env,json({error:'Too many requests. Please wait a minute.'},429));
     }
     if(isSocket)return env.ROOMS.getByName(url.pathname.split('/')[3]).fetch(request);
     if(isMedia){
       const response=await env.ROOMS.getByName(url.pathname.split('/')[3]).fetch(request);
-      if(cacheKey&&response.ok)ctx.waitUntil(caches.default.put(cacheKey,response.clone()).catch(()=>{}));
-      return responseHeaders(request,env,response);
+      if(cacheKey&&response.status===200)ctx.waitUntil(caches.default.put(cacheKey,response.clone()).catch(()=>{}));
+      return responseHeaders(request,env,mediaRange(response,request));
     }
     return handleApi(request,env,roomAdapter(env));
   }

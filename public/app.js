@@ -35,7 +35,7 @@ function safeImage(value) {
   if(/^\/api\/rooms\/\d{6}\/media\/[a-f0-9-]{36}\/plain$/.test(value))return value;
   try { const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password?u.href:''; }catch{return '';}
 }
-function nav() { return `<nav class="site-nav">${brand()}<div class="nav-right">${activeUser()?`<a class="quiet-button" href="#dashboard">My quizzes</a><a class="avatar" href="#account" aria-label="Account settings">${esc(activeUser().email?.[0]?.toUpperCase() || 'G')}</a>`:''}</div></nav>`; }
+function nav() { return `<nav class="site-nav">${brand()}<div class="nav-right">${activeUser()?`${S.section==='learn'?'':'<a class="quiet-button" href="#dashboard">My quizzes</a>'}<a class="avatar" href="#account" aria-label="Account settings">${esc(activeUser().email?.[0]?.toUpperCase() || 'G')}</a>`:''}</div></nav>`; }
 function shell(content) { app.innerHTML = `<div class="shell">${nav()}${content}</div>`; }
 function loading(message = 'Loading…') { shell(`<div class="loading-section"><span class="spinner"></span>${esc(message)}</div>`); }
 function modal(title, body, actions = '', onSetup) {
@@ -378,7 +378,7 @@ async function openSocket() {
   const ws=new WebSocket(url);let firstState=true;S.ws=ws;
   const syncClock=()=>{if(generation===S.wsGeneration&&S.connected&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify(S.clock.request()));};
   S.connectTimeout=setTimeout(()=>{if(generation===S.wsGeneration&&ws.readyState<2){S.retries++;void openSocket();}},12000);
-  ws.onopen=()=>{if(generation!==S.wsGeneration)return;S.lastSocketMessage=Date.now();ws.send(JSON.stringify(room.role==='host'?{type:'auth',role:'host',token,mediaVersion:1,conversationVersion:1,chatSubscribed:!S.chat.hidden}:{type:'auth',role:'player',name:room.name,playerId:room.playerId,resumeToken:room.resumeToken,mediaVersion:1,conversationVersion:1,chatSubscribed:!S.chat.hidden}));
+  ws.onopen=()=>{if(generation!==S.wsGeneration)return;S.lastSocketMessage=Date.now();ws.send(JSON.stringify(room.role==='host'?{type:'auth',role:'host',token,mediaVersion:globalThis.crypto?.subtle?2:1,conversationVersion:1,chatSubscribed:!S.chat.hidden}:{type:'auth',role:'player',name:room.name,playerId:room.playerId,resumeToken:room.resumeToken,mediaVersion:globalThis.crypto?.subtle?2:1,conversationVersion:1,chatSubscribed:!S.chat.hidden}));
     let heartbeatTicks=0;S.heartbeat=setInterval(()=>{if(generation!==S.wsGeneration)return;if(navigator.onLine===false||Date.now()-S.lastSocketMessage>=7500){S.connected=false;S.connectionStatus=navigator.onLine===false?'offline':'reconnecting';updateConnection();if(navigator.onLine!==false){S.retries++;void openSocket();}else ws.close();return;}if(ws.readyState===WebSocket.OPEN){ws.send('ping');if(++heartbeatTicks%12===0)syncClock();}},2500);
   };
   ws.onmessage=event=>{
@@ -392,13 +392,14 @@ async function openSocket() {
       const initialState=firstState;if(firstState){S.answerPending=false;firstState=false;}
       const previousId=S.roomState?.question?.id,newId=data.state?.question?.id,previousPhase=S.roomState?.phase;
       if($('.image-modal')&&(previousId!==newId||previousPhase!==data.state.phase))closeModal();
-      S.connected=true;S.connectionStatus='connected';S.retries=0;S.roomState=data.state;S.chat?.setState(data.state);S.clock.observe(data.state.serverNow);S.images?.release(data.state.imageKeys);S.images?.pause(data.state.phase==='question'||data.state.phase==='finished');if(data.state.imageManifest)S.images?.prepare(data.state.imageManifest);else if(data.state.phase==='finished')S.images?.prepare([]);
+      S.connected=true;S.connectionStatus='connected';S.retries=0;S.roomState=data.state;S.chat?.setState(data.state);S.clock.observe(data.state.serverNow);S.images?.release(data.state.imageKeys);S.images?.pause(data.state.phase==='question'||data.state.phase==='finished');if(data.state.mediaPreparation)S.images?.prepareCurrent(data.state.mediaPreparation,token=>{if(S.roomState?.phase==='countdown'&&S.roomState.mediaPreparation?.token===token)send({type:'media_ready',token});});if(data.state.imageManifest)S.images?.prepare(data.state.imageManifest);else if(data.state.phase==='finished')S.images?.prepare([]);
       if(initialState){syncClock();S.syncTimers=[setTimeout(syncClock,350),setTimeout(syncClock,1000)];}
       if(previousId!==newId) {S.selection=null;S.pin=null;S.order=data.state.question?.options?.map(o=>o.id)||[];S.answerSent=false;S.answerPending=false;}
       if(data.state.me?.answered) {S.answerSent=true;S.answerPending=false;S.selection=data.state.me.answer??S.selection;}
       else if(newId&&room.role==='player') {try{const saved=JSON.parse(sessionStorage.getItem(`gather.answer.${room.code}.${newId}`)||'null');if(saved){S.answerSent=true;S.selection=saved.answer;}}catch{}}
       if(data.state.question?.type==='order'&&Array.isArray(S.selection))S.order=[...S.selection];if(data.state.question?.type==='pin'&&S.selection&&typeof S.selection==='object')S.pin=S.selection;
       renderRoom();if(previousId!==newId||previousPhase!==data.state.phase){window.scrollTo(0,0);if(S.room.role==='player'&&data.state.phase==='question')$('#live-question-title')?.focus({preventScroll:true});}
+    } else if(data.type==='media_progress'){if(S.roomState?.phase==='countdown'){S.roomState.mediaProgress={ready:data.ready,total:data.total,waiting:data.waiting};updateTimer();}
     } else if(data.type==='progress') {
       if(data.questionId&&data.questionId!==S.roomState?.question?.id)return;
       if(S.roomState)S.roomState.answerCount=data.answerCount;
@@ -499,7 +500,7 @@ function countdownView(st,isHost) {
   const label=type?(hint.hasImage&&hint.type!=='pin'?`Image · ${type.toLowerCase()}`:type):'';
   const number=st.round&&st.settings?.roundsEnabled?st.round.questionIndex+1:st.questionIndex+1;
   const total=st.round&&st.settings?.roundsEnabled?st.round.questionCount:st.totalQuestions;
-  return `<main class="countdown-state">${roundLabel(st)}<p class="countdown-progress">Question ${number} of ${total}</p><h1>Get ready<span>.</span></h1>${label?`<p class="countdown-hint">${esc(label)}</p>`:''}<div id="countdown-number" role="timer" aria-live="polite">—</div>${isHost?'<button class="quiet-button countdown-end" data-action="room-finish">End quiz</button>':''}</main>`;
+  return `<main class="countdown-state">${roundLabel(st)}<p class="countdown-progress">Question ${number} of ${total}</p><h1>Get ready<span>.</span></h1>${label?`<p class="countdown-hint">${esc(label)}</p>`:''}<div id="countdown-number" role="timer" aria-live="polite">—</div><p id="countdown-media" class="small muted" role="status" hidden></p>${isHost?'<button class="quiet-button" data-action="room-media-skip" id="media-skip" hidden>Start anyway</button>':''}${isHost?'<button class="quiet-button countdown-end" data-action="room-finish">End quiz</button>':''}</main>`;
 }
 function roundResultsView(st,isHost) {
   const r=(st.roundResults||[]).find(r=>r.id===st.round?.id)||(st.roundResults||[]).at(-1),hasNext=st.round&&st.round.index+1<st.round.total;
@@ -561,7 +562,7 @@ function updateTimer() {
   const st=S.roomState;if(!st)return;
   const remainingMs=st.deadline==null?null:Math.max(0,st.deadline-(S.clock?.now()??Date.now()));
   const remaining=remainingMs==null?null:Math.ceil(remainingMs/1000);
-  const countdown=$('#countdown-number');if(st.phase==='countdown'&&countdown){countdown.textContent=remaining??'—';return;}
+  const countdown=$('#countdown-number');if(st.phase==='countdown'&&countdown){const waiting=remaining===0&&!!st.mediaPreparation;countdown.textContent=waiting?'…':remaining??'—';const media=$('#countdown-media');if(media){media.hidden=!waiting;media.textContent=st.role==='host'&&st.mediaProgress?`Preparing images · ${st.mediaProgress.ready} / ${st.mediaProgress.total} devices ready`:'Preparing images…';}const skip=$('#media-skip');if(skip)skip.hidden=!waiting||!st.mediaProgress?.waiting||(S.clock?.now()??Date.now())<st.deadline+3000;return;}
   const timer=$('#live-timer');if(!timer)return;
   const seconds=st.phase==='question'?remaining??0:0;
   $('span',timer).textContent=st.phase==='reveal'?'✓':st.deadline==null?'∞':seconds;timer.classList.toggle('urgent',seconds<=5&&st.phase==='question');
@@ -580,7 +581,8 @@ async function loadAccountChat() {
   catch(error){if(location.hash==='#account'&&activeUser()?.id===ownerId&&$('#account-chat-content'))$('#account-chat-content').innerHTML=accountChatView(null,error.message);}
 }
 function accountView() {
-  shell(`<main class="page"><div class="page-head"><div><a class="quiet-button" href="#dashboard" style="padding:0;margin-bottom:15px">${icon('back',14)} My quizzes</a><h1>Account</h1></div></div><section class="card account-section"><h2 style="font-size:22px">Your account</h2><p>Signed in as <span class="subtle">${esc(activeUser()?.email)}</span></p><button class="btn" data-action="sign-out">${icon('logout',15)} Sign out</button></section><section class="card account-section"><h2 style="font-size:22px">Room chat</h2><div id="account-chat-content">${accountChatView()}</div></section><section class="card account-section"><h2 style="font-size:22px">Change your password</h2><form id="password-form"><div class="field"><label for="new-password">New password</label><input id="new-password" type="password" minlength="8" maxlength="128" autocomplete="new-password" required></div><button class="btn" type="submit">Update password</button></form></section><section class="card account-section"><h2 style="font-size:22px">Delete your account</h2><p>Permanently deletes your account, quizzes, images and results.</p><button class="btn danger" data-action="delete-account">Delete my account</button></section></main>`);
+  const fromLearn=S.section==='learn',returnTo=fromLearn?(/^#learn(?:\/[a-z-]+)*$/.test(S.learnReturn||'')?S.learnReturn:'#learn'):'#dashboard';
+  shell(`<main class="page"><div class="page-head"><div><a class="quiet-button" href="${esc(returnTo)}" style="padding:0;margin-bottom:15px">${icon('back',14)} ${fromLearn?'Go back to Learn':'My quizzes'}</a><h1>Account</h1></div></div><section class="card account-section"><h2 style="font-size:22px">Your account</h2><p>Signed in as <span class="subtle">${esc(activeUser()?.email)}</span></p><button class="btn" data-action="sign-out">${icon('logout',15)} Sign out</button><a class="btn ghost" href="${fromLearn?'#':'#learn'}">${fromLearn?'Go to Quiz':'Go to Learn'} ${icon('arrow',16)}</a></section><section class="card account-section"><h2 style="font-size:22px">Room chat</h2><div id="account-chat-content">${accountChatView()}</div></section><section class="card account-section"><h2 style="font-size:22px">Change your password</h2><form id="password-form"><div class="field"><label for="new-password">New password</label><input id="new-password" type="password" minlength="8" maxlength="128" autocomplete="new-password" required></div><button class="btn" type="submit">Update password</button></form></section><section class="card account-section"><h2 style="font-size:22px">Delete your account</h2><p>Permanently deletes your account, quizzes, images and results.</p><button class="btn danger" data-action="delete-account">Delete my account</button></section></main>`);
   void loadAccountChat();
 }
 function csvFor(players,rounds=[]) {
@@ -631,6 +633,8 @@ const actions = {
   'confirm-delete-quiz':async el=>{await db(`giveaway_quizzes?id=eq.${encodeURIComponent(el.dataset.id)}`,{method:'DELETE'});S.quizzes=S.quizzes.filter(q=>q.id!==el.dataset.id);closeModal();renderDashboard();toast('Quiz deleted.');},
   'copy-link':copyLink,
   'reconnect':()=>{if(S.room&&!S.fatalRoomError){S.retries=1;return openSocket();}},
+  'room-media-skip':()=>modal('Start without waiting?', '<p>Some players are still downloading images. Starting now may reduce their answer time.</p>', '<button class="btn primary" data-action="room-media-continue">Start anyway</button>'),
+  'room-media-continue':()=>{closeModal();send({type:'media_skip'});},
   'room-start':()=>send({type:'start'}),
   'room-reveal':()=>send({type:'reveal'}),
   'room-next':()=>send({type:'next'}),
@@ -745,6 +749,9 @@ document.addEventListener('keydown',event=>{
 let routeVersion=0;
 async function route() {
   const version=++routeVersion,raw=location.hash.slice(1),[path,...parts]=raw.split('/');
+  if(path==='learn'){S.section='learn';S.learnReturn=location.hash;try{sessionStorage.setItem('gather.section','learn');sessionStorage.setItem('gather.learn.route',S.learnReturn);}catch{}}
+  else if(path==='account'&&!S.section){try{S.section=sessionStorage.getItem('gather.section')||'quiz';S.learnReturn=sessionStorage.getItem('gather.learn.route')||'#learn';}catch{S.section='quiz';}}
+  else if(path!=='account'){S.section='quiz';try{sessionStorage.setItem('gather.section','quiz');}catch{}}
   closeModal();window.scrollTo(0,0);
   if(path!=='learn'&&S.learning){S.learning.destroy();S.learning=null;}
   if(!['learn','host','reset'].includes(path))try{sessionStorage.removeItem('gather.learn.return');}catch{}

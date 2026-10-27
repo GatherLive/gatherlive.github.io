@@ -3,7 +3,7 @@ export const LEARNING_MAX_BYTES=128*1024;
 export const LEARNING_MAX_DEVICES=8;
 export const LEARNING_MAX_ITEMS=750;
 const MAX_COUNT=1_000_000;
-const TOPICS=new Set(['flags','capitals','map','review']);
+const TOPICS=new Set(['flags','capitals','map','all','review']);
 const REGIONS=new Set(['World','Africa','Americas','Asia','Europe','Oceania']);
 const record=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const integer=(value,max)=>Number.isSafeInteger(value)&&value>=0&&value<=max;

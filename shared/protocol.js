@@ -14,11 +14,12 @@ export async function authorize(engine,meta,env,message) {
     if (typeof message.token !== 'string' || message.token.length > 8192) throw new HttpError(401,'Please sign in.');
     const user=await authenticate(env,message.token);
     if (user.id !== meta.ownerId) throw new HttpError(403,'Only the host can control this quiz.');
-    return {identity:{role:'host',userId:user.id,...conversation,...(message.mediaVersion===1?{mediaVersion:1}:{})},welcome:{type:'welcome',role:'host',...(message.mediaVersion===1?{imageManifest:engine.imageManifest()}:{})}};
+    return {identity:{role:'host',userId:user.id,...conversation,...([1,2].includes(message.mediaVersion)?{mediaVersion:message.mediaVersion}:{})},welcome:{type:'welcome',role:'host',...([1,2].includes(message.mediaVersion)?{imageManifest:engine.imageManifest()}:{})}};
   }
   if (message.role !== 'player') throw new HttpError(400,'Choose host or player.');
   const result=engine.addPlayer(message.name,message.playerId,message.resumeToken);
-  return {identity:{role:'player',playerId:result.playerId,...conversation,...(message.mediaVersion===1?{mediaVersion:1}:{})},welcome:{type:'welcome',role:'player',...result,...(message.mediaVersion===1?{imageManifest:engine.imageManifest()}:{})}};
+  engine.registerMedia(result.playerId,message.mediaVersion);
+  return {identity:{role:'player',playerId:result.playerId,...conversation,...([1,2].includes(message.mediaVersion)?{mediaVersion:message.mediaVersion}:{})},welcome:{type:'welcome',role:'player',...result,...([1,2].includes(message.mediaVersion)?{imageManifest:engine.imageManifest()}:{})}};
 }
 export function safeError(error) {
   return {type:'error',message:error.status || error.name === 'EngineError' ? error.message : 'The room could not complete that action. Please retry.'};

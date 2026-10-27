@@ -38,7 +38,7 @@ export function normalizeProgress(input){
   }
   const tests=new Map();
   for(const test of Array.isArray(input.tests)?input.tests:[]){
-    if(!object(test)||typeof test.id!=='string'||!/^[a-zA-Z0-9-]{1,64}$/.test(test.id)||![...TOPICS,'review'].includes(test.topic))continue;
+    if(!object(test)||typeof test.id!=='string'||!/^[a-zA-Z0-9-]{1,64}$/.test(test.id)||![...TOPICS,'all','review'].includes(test.topic))continue;
     const total=integer(test.total,750);if(!total)continue;
     tests.set(test.id,{id:test.id,topic:test.topic,region:REGIONS.includes(test.region)?test.region:'World',total,correct:integer(test.correct,total),at:integer(test.at,Date.now()+300000)});
   }

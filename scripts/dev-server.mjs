@@ -6,7 +6,7 @@ import {WebSocketServer} from 'ws';
 import {loadConfig} from './config.mjs';
 import {RoomEngine} from '../shared/engine.js';
 import {emptyLearningProgress,mergeLearningProgress,resetLearningProgress} from '../shared/learning-progress.js';
-import {RoomMedia} from '../shared/media.js';
+import {RoomMedia,mediaRange} from '../shared/media.js';
 import {RoomConversation,CONVERSATION_COMMANDS} from '../shared/conversation.js';
 import {chatCodeRequest,chatOwnerKey,redeemChatCode,MemoryChatCodes} from '../shared/chat-access.js';
 import {handleApi,originAllowed,json,HttpError,responseHeaders} from '../shared/api.js';
@@ -80,7 +80,7 @@ async function persistConversation(room){
   await rename(`${path}.tmp`,path);
 }
 function send(ws,message){if(ws.readyState===1){if(ws.bufferedAmount>1024*1024){ws.close(1013,'Connection too slow; reconnect.');return;}ws.send(JSON.stringify(message));}}
-function sendState(room,ws,identity){send(ws,{type:'state',state:room.engine.snapshot(identity.role==='host',identity.playerId,{media:identity.mediaVersion===1,conversation:identity.conversationVersion===1})});}
+function sendState(room,ws,identity){send(ws,{type:'state',state:room.engine.snapshot(identity.role==='host',identity.playerId,{media:identity.mediaVersion||false,conversation:identity.conversationVersion===1})});}
 function sendConversation(room,ws,identity){if(identity.conversationVersion===1)send(ws,{type:'conversation',state:room.engine.conversation.snapshot(identity,room.engine.phase)});}
 function broadcastConversation(room,event){
   if(room.closed||room.engine.phase==='finished')return;
@@ -94,6 +94,7 @@ function broadcastProgress(room){
   if(room.progressTimer)return;
   room.progressTimer=setTimeout(()=>{room.progressTimer=null;if(room.closed||room.engine.phase!=='question')return;for(const [ws,id]of room.clients)if(id.role==='host'&&!id.superseded)send(ws,{...room.engine.progress(),questionId:room.engine.question?.id});},50);
 }
+function broadcastMediaProgress(room){if(room.mediaProgressTimer)return;room.mediaProgressTimer=setTimeout(()=>{room.mediaProgressTimer=null;if(room.closed||room.engine.phase!=='countdown')return;for(const [ws,id] of room.clients)if(id.role==='host'&&!id.superseded)send(ws,{type:'media_progress',...room.engine.mediaStatus()});},100);}
 function broadcast(room){if(room.closed)return;for(const [ws,identity] of room.clients)if(identity.role&&!identity.superseded)sendState(room,ws,identity);}
 function joinBroadcast(room){if(!room.closed&&!room.joinTimer)room.joinTimer=setTimeout(()=>{room.joinTimer=null;broadcast(room);},100);}
 function serial(room,work){const task=room.queue.then(work);room.queue=task.catch(()=>{});return task;}
@@ -171,7 +172,7 @@ const adapter={
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.webp':'image/webp','.ico':'image/x-icon','.json':'application/json','.txt':'text/plain'};
 const csp="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.workers.dev wss://*.workers.dev ws://localhost:* ws://127.0.0.1:*; font-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'";
 const rates=new Map();
-function rateLimit(req){const key=req.socket.remoteAddress||'local',now=Date.now();let item=rates.get(key);if(!item||now-item.start>=60000){item={start:now,count:0};rates.set(key,item);}return ++item.count<=240;}
+function rateLimit(req){const media=/^\/api\/rooms\/\d{6}\/media\//.test(req.url),key=(req.socket.remoteAddress||'local')+(media?':media':':api'),now=Date.now();let item=rates.get(key);if(!item||now-item.start>=60000){item={start:now,count:0};rates.set(key,item);}return ++item.count<=(media?3000:240);}
 function webRequest(req){return new Request(`http://${req.headers.host||`${host}:${port}`}${req.url}`,{method:req.method,headers:req.headers,...(!['GET','HEAD'].includes(req.method)?{body:req,duplex:'half'}:{})});}
 async function nodeResponse(res,response){res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()));}
 const server=http.createServer(async(req,res)=>{
@@ -185,7 +186,7 @@ const server=http.createServer(async(req,res)=>{
      if(!room||room.closed||roomExpires(room)<=Date.now())return nodeResponse(res,json({error:'Quiz not found.'},404));
      const response=await room.media.response(room.engine,env,image[2],!!image[3]);
      if(room.closed)return nodeResponse(res,json({error:'Quiz not found.'},404));
-     return nodeResponse(res,responseHeaders(request,env,response));
+     return nodeResponse(res,responseHeaders(request,env,mediaRange(response,request)));
    }
    return nodeResponse(res,await handleApi(request,env,adapter));
   }
@@ -274,6 +275,8 @@ server.on('upgrade',(req,socket,head)=>{
           const {event,channel,...ack}=result;
           if(event){await persistConversation(room);broadcastConversation(room,event);}
           send(ws,ack);
+        }else if(message.type==='media_ready'){
+          if(result.changed&&identity.role==='host'&&room.engine.phase==='countdown')await persist(room);await persistTransition();if(result.changed&&identity.playerId)await persistPlayer(room,identity.playerId);send(ws,{type:result.type,token:result.token});if(result.changed)broadcastMediaProgress(room);
         }else if(message.type==='answer'){
           await persistTransition();
           await persistPlayer(room,identity.playerId);
@@ -291,7 +294,7 @@ server.on('upgrade',(req,socket,head)=>{
       }
     }).catch(()=>{});
   });
-  ws.on('close',()=>{clearTimeout(authTimer);serial(room,async()=>{room.clients.delete(ws);if(!room.closed&&identity.playerId){room.engine.disconnect(identity.playerId);await persistPlayer(room,identity.playerId);joinBroadcast(room);}}).catch(()=>{});});
+  ws.on('close',()=>{clearTimeout(authTimer);serial(room,async()=>{room.clients.delete(ws);if(!room.closed&&identity.playerId){room.engine.disconnect(identity.playerId);if(room.engine.tick()){await persist(room);broadcast(room);}else await persistPlayer(room,identity.playerId);joinBroadcast(room);}}).catch(()=>{});});
   ws.on('error',()=>{});
  });
 });

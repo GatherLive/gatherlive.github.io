@@ -8,6 +8,8 @@
 
 All learning assets are served locally with Gather. No tile service, external image request, API key, or paid geography API is needed.
 
+Location markers show approximate country reference points, not capital pins. Equatorial Guinea, New Zealand, and Trinidad and Tobago use an in-land centroid of their largest bundled polygon instead of an offshore label anchor.
+
 Afghanistan's image follows flag-icons' republic tricolour convention. A learning note distinguishes this from the white flag used by the de facto authorities. Flag usage and recognition can differ by context.
 
 ## Capital checks

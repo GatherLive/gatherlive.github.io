@@ -190,6 +190,7 @@ export class RoomEngine {
     this.questionIndex = -1;
     this.roundIndex = 0;
     this.roundResults = [];
+    this.mediaGate = null;
     this.startedAt = null;
     this.finishedAt = null;
     this.deadline = null;
@@ -220,6 +221,7 @@ export class RoomEngine {
     this.questionIndex = raw.questionIndex;
     this.roundIndex = raw.roundIndex ?? 0;
     this.roundResults = clone(raw.roundResults ?? []);
+    this.mediaGate = clone(raw.mediaGate ?? null);
     this.startedAt = raw.startedAt;
     this.finishedAt = raw.finishedAt ?? null;
     this.deadline = raw.deadline;
@@ -237,7 +239,7 @@ export class RoomEngine {
     if(this.phase==='finished')this.conversation.end();
   }
   serialize({ includePlayers = true, includeConversation = true } = {}) {
-    return clone({ version: 1, code: this.code, ownerId: this.ownerId, chatUnlocked: this.chatUnlocked, quiz: this.quiz, imagePlan: this.imagePlan, settings: this.settings, ...(includeConversation?{conversation:this.conversation.serialize()}:{}), phase: this.phase, questionIndex: this.questionIndex, roundIndex: this.roundIndex, roundResults: this.roundResults, startedAt: this.startedAt, finishedAt: this.finishedAt, deadline: this.deadline, createdAt: this.createdAt, updatedAt: this.updatedAt, locked: this.locked, players: includePlayers ? [...this.players.values()] : [], winners: this.winners, drawnPlayerIds: [...this.drawnPlayerIds], draws: this.draws });
+    return clone({ version: 1, code: this.code, ownerId: this.ownerId, chatUnlocked: this.chatUnlocked, quiz: this.quiz, imagePlan: this.imagePlan, mediaGate:this.mediaGate, settings: this.settings, ...(includeConversation?{conversation:this.conversation.serialize()}:{}), phase: this.phase, questionIndex: this.questionIndex, roundIndex: this.roundIndex, roundResults: this.roundResults, startedAt: this.startedAt, finishedAt: this.finishedAt, deadline: this.deadline, createdAt: this.createdAt, updatedAt: this.updatedAt, locked: this.locked, players: includePlayers ? [...this.players.values()] : [], winners: this.winners, drawnPlayerIds: [...this.drawnPlayerIds], draws: this.draws });
   }
   _indexImages() { this._images = new Map(this.imagePlan.map(asset => [imageSource(this.quiz.questions,asset),asset])); }
   authorizeChat({enable=true}={}) {
@@ -263,7 +265,23 @@ export class RoomEngine {
   }
   _touch() { this.updatedAt = this.now(); }
   get question() { return this.quiz.questions[this.questionIndex] ?? null; }
-  nextDeadline() { return this.phase === 'question' || this.phase === 'countdown' ? this.deadline : null; }
+  nextDeadline() { if(this.phase==='countdown'&&this.deadline<=this.now()&&this.waitingForImages())return null;return this.phase === 'question' || this.phase === 'countdown' ? this.deadline : null; }
+  mediaStatus(){
+    const gate=this.mediaGate;let total=0,ready=0;
+    if(gate?.hostRequired){total++;if(gate.hostReady)ready++;}
+    if(gate)for(const p of this.players.values())if(p.connected&&p.mediaVersion===2){total++;if(p.mediaReadyToken===gate.token)ready++;}
+    return {total,ready,waiting:!!gate&&!gate.forced&&ready<total};
+  }
+  waitingForImages(){return this.mediaStatus().waiting;}
+  registerMedia(playerId,version){const p=this.players.get(playerId);if(p)p.mediaVersion=version===2?2:1;}
+  _mediaReady(identity,message){
+    if(identity?.mediaVersion!==2||!this.mediaGate||message.token!==this.mediaGate.token||this.phase!=='countdown')return {type:'media_ready_ack',token:message.token,changed:false};
+    let changed=false;
+    if(identity.role==='player'){const p=this.players.get(identity.playerId);if(!p)fail('PLAYER_MISSING','Your player session is no longer active.');changed=p.mediaReadyToken!==message.token;p.mediaReadyToken=message.token;}
+    else if(identity.role!=='host'||identity.userId!=null&&identity.userId!==this.ownerId)fail('FORBIDDEN','Join this quiz first.');
+    else if(this.mediaGate.hostRequired){changed=!this.mediaGate.hostReady;this.mediaGate.hostReady=true;}
+    this.tick();return {type:'media_ready_ack',token:message.token,changed};
+  }
   _roundStartIndex(index = this.roundIndex) {
     return this.settings.rounds.slice(0, index).reduce((sum, round) => sum + round.questionIds.length, 0);
   }
@@ -303,13 +321,14 @@ export class RoomEngine {
     if (player) { player.connected = false; this._touch(); }
   }
   tick() {
-    if (this.phase === 'countdown' && this.deadline != null && this.now() >= this.deadline) { this._activateQuestion(); return true; }
+    if (this.phase === 'countdown' && this.deadline != null && this.now() >= this.deadline && !this.waitingForImages()) { this._activateQuestion(); return true; }
     if (this.phase === 'question' && this.deadline != null && this.now() >= this.deadline) { this._reveal(); return true; }
     return false;
   }
   command(identity, message) {
     this.tick();
     if (!message || typeof message !== 'object' || Array.isArray(message)) fail('INVALID_COMMAND', 'Command is invalid.');
+    if(message.type==='media_ready')return this._mediaReady(identity,message);
     if(CONVERSATION_COMMANDS.has(message.type)){
       if(identity?.role==='host'&&identity.userId!=null&&identity.userId!==this.ownerId)fail('FORBIDDEN','Only the host can control this quiz.');
       return this.conversation.command(identity,message,{phase:this.phase,players:this.players,now:this.now()});
@@ -319,11 +338,15 @@ export class RoomEngine {
       return this._answer(identity.playerId, message);
     }
     if (identity?.role !== 'host' || (identity.userId != null && identity.userId !== this.ownerId)) fail('FORBIDDEN', 'Only the host can control the quiz.');
+    this.mediaHost=identity.mediaVersion===2;
     switch (message.type) {
       case 'start':
         if (this.phase !== 'lobby') fail('INVALID_PHASE', 'This quiz has already started.');
         this._queueQuestion(0);
         return { type: 'started' };
+      case 'media_skip':
+        if(this.phase!=='countdown'||!this.mediaGate)fail('INVALID_PHASE','There are no images to wait for.');
+        this.mediaGate.forced=true;this.tick();return {type:'media_skipped'};
       case 'reveal':
         if (this.phase !== 'question') fail('INVALID_PHASE', 'There is no active question.');
         this._reveal();
@@ -375,13 +398,16 @@ export class RoomEngine {
     this._answerCount = 0;
     this._publicReveal = null;
     this.startedAt = null;
-    if (this.settings.questionDelay === 0) { this._activateQuestion(); return; }
+    const q=this.question,ids=[...new Set([q.image,...(q.options||[]).map(o=>o.image)].map(source=>this._images.get(source)?.id).filter(Boolean))];
+    this.mediaGate=ids.length&&(this.mediaHost||[...this.players.values()].some(p=>p.connected&&p.mediaVersion===2))?{token:crypto.randomUUID(),ids,forced:false,hostRequired:this.mediaHost===true,hostReady:false}:null;
+    if (this.settings.questionDelay === 0&&!this.waitingForImages()) { this._activateQuestion(); return; }
     this.phase = 'countdown';
     this.deadline = this.now() + this.settings.questionDelay * 1000;
     this._touch();
   }
   _activateQuestion() {
     this.phase = 'question';
+    this.mediaGate=null;
     this.startedAt = this.now();
     this.deadline = this.question.type === 'slide' ? null : this.startedAt + this.question.timeLimit * 1000;
     this._touch();
@@ -542,10 +568,13 @@ export class RoomEngine {
     const roundResults = this.roundResults.map((round) => ({ ...round, leaderboard: forHost ? round.leaderboard : this.settings.showLeaderboard ? round.leaderboard.slice(0, 10) : [] }));
     const result = { code: this.code, title: this.quiz.title, phase: this.phase, role: forHost ? 'host' : playerId ? 'player' : 'spectator', questionIndex: this.questionIndex, totalQuestions: this.quiz.questions.length, round: this._round(), roundResults: clone(roundResults), question, deadline: this.deadline, serverNow: this.now(), players, participantCount: this.players.size, leaderboard: this.settings.showLeaderboard || forHost || this.phase === 'finished' ? clone(forHost ? this._leaderboard() : this._leaderboard().slice(0, 10)) : [], answerCount: this._answerCount, settings: clone(this.settings), locked: this.locked, winners: clone(this.winners) };
     // A countdown hint describes only the format. Never include content, IDs,
-    // option counts, image URLs, or decryption keys before the question opens.
+    // image URLs or decryption keys before the question opens. Opaque ciphertext
+    // IDs may be sent separately for download readiness; they contain no answers.
     if (this.phase === 'countdown' && this.settings.showQuestionType && q) {
       result.questionHint = { type: q.type, hasImage: !!(q.image || q.options?.some(option => option.image)) };
     }
+    if(media===2&&this.phase==='countdown'&&this.mediaGate)result.mediaPreparation={token:this.mediaGate.token,ids:[...this.mediaGate.ids]};
+    if(forHost&&this.phase==='countdown'&&this.mediaGate)result.mediaProgress=this.mediaStatus();
     if(media&&this.phase!=='question')result.imageManifest=this.phase==='finished'?[]:this.imageManifest();
     const me = this._me(playerId);
     if (me) result.me = me;
