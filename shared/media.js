@@ -41,7 +41,7 @@ export class RoomMedia {
     if (!this.flights.has(key)) this.flights.set(key,this.slot(async () => {
       try {
         const inline=source.match(/^data:(image\/(?:png|jpeg|webp|gif));base64,(.+)$/);
-        const response = inline ? new Response(Uint8Array.from(atob(inline[2]),char=>char.charCodeAt(0)),{headers:{'Content-Type':inline[1]}}) : await fetch(source,{redirect:'error',signal:AbortSignal.timeout(8000)});
+        const response = inline ? new Response(Uint8Array.from(atob(inline[2]),char=>char.charCodeAt(0)),{headers:{'Content-Type':inline[1]}}) : await fetch(source,{redirect:'manual',signal:AbortSignal.timeout(8000)});
         const mime = response.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase();
         if (!response.ok || !TYPES.has(mime) || !response.body) { await response.body?.cancel(); throw new Error('Unsupported image.'); }
         const reader = response.body.getReader(), parts = []; let length = 0;
