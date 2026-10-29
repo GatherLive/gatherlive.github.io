@@ -398,3 +398,4 @@
 
 .home-actions .learn-home-card{grid-column:1/-1;min-height:96px;display:flex;flex-direction:row;align-items:center;gap:18px;padding:23px 26px}.learn-home-card .action-icon{color:var(--accent);display:flex}.learn-home-card h2{display:flex;align-items:center;gap:10px}.learn-home-card .arrow{top:50%;transform:translateY(-50%)}.learn-beta{font-size:10px;font-weight:500;letter-spacing:.02em;color:var(--accent);border:1px solid #51465f;background:#302937;padding:3px 7px;border-radius:8px;line-height:1.2}@media(max-width:700px){.home-actions .learn-home-card{min-height:84px;padding:20px;gap:16px}.learn-home-card h2{font-size:18px}}
 #media-skip[hidden],#countdown-media[hidden]{display:none}#countdown-media{font-size:13px;margin:14px 0 0;color:var(--muted)}#media-skip{margin-top:12px}
+.turnstile-slot{display:flex;align-items:center;justify-content:center;margin:12px 0 2px}

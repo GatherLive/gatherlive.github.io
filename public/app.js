@@ -53,6 +53,62 @@ async function authRequest(path, body, method = 'POST', token) {
   if (!S.config.supabaseUrl || !S.config.supabaseKey) throw new Error('Authentication unavailable. Check the server configuration.');
   return request(`${S.config.supabaseUrl}/auth/v1/${path}`, {method,headers:{apikey:S.config.supabaseKey,'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},...(body?{body:JSON.stringify(body)}:{})});
 }
+let turnstileScriptPromise = null;
+let turnstileWidgetId = null;
+let turnstileToken = '';
+function loadTurnstile() {
+  if (window.turnstile) return Promise.resolve(window.turnstile);
+  if (!turnstileScriptPromise) turnstileScriptPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    script.async = true;
+    script.onload = () => resolve(window.turnstile);
+    script.onerror = () => { turnstileScriptPromise = null; script.remove(); reject(new Error('Verification could not load. Refresh and try again.')); };
+    document.head.append(script);
+  });
+  return turnstileScriptPromise;
+}
+function discardTurnstile() {
+  turnstileToken = '';
+  if (turnstileWidgetId !== null && window.turnstile) {
+    try { window.turnstile.remove(turnstileWidgetId); } catch {}
+  }
+  turnstileWidgetId = null;
+}
+function resetTurnstile() {
+  turnstileToken = '';
+  if (turnstileWidgetId !== null && window.turnstile) {
+    try { window.turnstile.reset(turnstileWidgetId); } catch {}
+  }
+}
+function captchaBody() {
+  if (!turnstileToken) throw new Error('Complete the verification, then try again.');
+  return {gotrue_meta_security:{captcha_token:turnstileToken}};
+}
+async function mountTurnstile() {
+  const mode = S.authMode;
+  const slot = $('#turnstile-slot');
+  if (!slot) return;
+  const sitekey = S.config.turnstileSiteKey;
+  if (!sitekey) { slot.innerHTML = '<div class="error-note">Verification is not configured.</div>'; return; }
+  let api;
+  try { api = await loadTurnstile(); }
+  catch (error) { slot.innerHTML = `<div class="error-note">${esc(error.message)}</div>`; return; }
+  if (!slot.isConnected || S.authMode !== mode) return;
+  try {
+    turnstileWidgetId = api.render(slot, {
+      sitekey,
+      action: mode === 'signup' ? 'signup' : mode === 'recover' ? 'recover' : 'login',
+      theme: 'auto',
+      appearance: mode === 'signup' ? 'always' : 'interaction-only',
+      callback: token => { turnstileToken = token; },
+      'expired-callback': () => { turnstileToken = ''; },
+      'error-callback': () => { turnstileToken = ''; }
+    });
+  } catch {
+    slot.innerHTML = '<div class="error-note">Verification could not load. Refresh and try again.</div>';
+  }
+}
 function saveSession(session) {
   const previousUser=S.session?.user?.id||S.session?.id||'';
   S.session = session; if (session) localStorage.setItem('gather.session',JSON.stringify(session)); else localStorage.removeItem('gather.session'); scheduleRefresh();
@@ -115,8 +171,10 @@ function home() {
   shell(`<main class="home"><div class="home-content"><h1>Live quizzes<span>.</span></h1><div class="home-actions"><a href="#host" class="action-card primary"><div class="action-icon">${icon('quiz',36)}</div><span class="arrow">↗</span><h2>Host quiz</h2></a><a href="#join" class="action-card"><div class="action-icon" style="color:var(--green)">${icon('users',36)}</div><span class="arrow">↗</span><h2>Join quiz</h2></a><a href="#learn" class="action-card learn-home-card"><div class="action-icon">${icon('learn',32)}</div><h2>Learn <span class="learn-beta">beta</span></h2><span class="arrow">↗</span></a></div></div></main>`);
 }
 function authView() {
+  discardTurnstile();
   const signup=S.authMode==='signup',recover=S.authMode==='recover',reset=S.authMode==='reset';
-  shell(`<main class="auth-layout"><section class="auth-card"><a class="quiet-button back-link" href="#">${icon('back',15)} Home</a><h1>${reset?'Reset password':recover?'Forgot password?':signup?'Create account':'Sign in'}</h1><form id="auth-form">${reset?'':`<div class="field"><label for="auth-email">Email</label><input id="auth-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required maxlength="254"></div>`}${recover?'':`<div class="field"><label for="auth-password">${reset?'New password':'Password'}</label><input id="auth-password" name="password" type="password" autocomplete="${signup||reset?'new-password':'current-password'}" placeholder="${signup||reset?'At least 8 characters':'Your password'}" minlength="${signup||reset?8:1}" required maxlength="128"></div>`}${S.authMessage?`<div class="info-note">${esc(S.authMessage)}</div>`:''}<div id="form-error" role="alert"></div><button class="btn primary full" type="submit">${reset?'Save password':recover?'Send reset link':signup?'Create account':'Sign in'} ${icon('arrow',16)}</button></form>${!reset?`<div class="auth-foot"><button class="quiet-button" data-action="auth-mode" data-mode="${signup||recover?'login':'signup'}">${signup||recover?'Sign in':'Create account'}</button>${!signup&&!recover?'<button class="quiet-button" data-action="auth-mode" data-mode="recover">Forgot password?</button>':''}</div>`:''}</section></main>`);
+  shell(`<main class="auth-layout"><section class="auth-card"><a class="quiet-button back-link" href="#">${icon('back',15)} Home</a><h1>${reset?'Reset password':recover?'Forgot password?':signup?'Create account':'Sign in'}</h1><form id="auth-form">${reset?'':`<div class="field"><label for="auth-email">Email</label><input id="auth-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required maxlength="254"></div>`}${recover?'':`<div class="field"><label for="auth-password">${reset?'New password':'Password'}</label><input id="auth-password" name="password" type="password" autocomplete="${signup||reset?'new-password':'current-password'}" placeholder="${signup||reset?'At least 8 characters':'Your password'}" minlength="${signup||reset?8:1}" required maxlength="128"></div>`}${S.authMessage?`<div class="info-note">${esc(S.authMessage)}</div>`:''}${reset?'':'<div id="turnstile-slot" class="turnstile-slot"></div>'}<div id="form-error" role="alert"></div><button class="btn primary full" type="submit">${reset?'Save password':recover?'Send reset link':signup?'Create account':'Sign in'} ${icon('arrow',16)}</button></form>${!reset?`<div class="auth-foot"><button class="quiet-button" data-action="auth-mode" data-mode="${signup||recover?'login':'signup'}">${signup||recover?'Sign in':'Create account'}</button>${!signup&&!recover?'<button class="quiet-button" data-action="auth-mode" data-mode="recover">Forgot password?</button>':''}</div>`:''}</section></main>`);
+  if(!reset)void mountTurnstile();
 }
 function joinView(code='') {
   shell(`<main class="auth-layout"><section class="auth-card"><a class="quiet-button back-link" href="#">${icon('back',15)} Home</a><h1>Join quiz</h1><form id="join-form"><div class="field"><label for="join-code">Code</label><input id="join-code" class="code-input" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" placeholder="000000" value="${esc(code)}" required></div><div class="field"><label for="join-name">Name</label><input id="join-name" name="name" autocomplete="nickname" placeholder="Your name" maxlength="24" minlength="1" value="${esc(localStorage.getItem('gather.name')||'')}" required></div><div id="form-error" role="alert"></div><button type="submit" class="btn primary full">Join ${icon('arrow',16)}</button></form></section></main>`);if(code.length===6)setTimeout(()=>$('#join-name')?.focus(),50);
@@ -719,11 +777,11 @@ document.addEventListener('submit',async event=>{
       toast('Chat unlocked.');
     }else if(form.id==='auth-form'){
       const email=$('#auth-email')?.value.trim(),password=$('#auth-password')?.value;
-      if(S.authMode==='recover'){await authRequest(`recover?redirect_to=${encodeURIComponent(location.origin+location.pathname)}`,{email});S.authMessage='Check your inbox for a password reset link.';authView();}
+      if(S.authMode==='recover'){await authRequest(`recover?redirect_to=${encodeURIComponent(location.origin+location.pathname)}`,{email,...captchaBody()});S.authMessage='Check your inbox for a password reset link.';authView();}
       else if(S.authMode==='reset'){await authRequest('user',{password},'PUT',await getToken());S.authMode='login';toast('New password saved.');location.hash='#dashboard';}
       else{
-        const signup=S.authMode==='signup';const data=await authRequest(signup?`signup?redirect_to=${encodeURIComponent(location.origin+location.pathname)}`:'token?grant_type=password',{email,password});
-        if(data.access_token){saveSession(data);S.authMessage='';location.hash=learningReturn();}else{S.authMessage='Check your email to confirm your account, then sign in here.';S.authMode='login';authView();}
+        const signup=S.authMode==='signup';const data=await authRequest(signup?`signup?redirect_to=${encodeURIComponent(location.origin+location.pathname)}`:'token?grant_type=password',{email,password,...captchaBody()});
+        if(data.access_token){discardTurnstile();saveSession(data);S.authMessage='';location.hash=learningReturn();}else{S.authMessage='Check your email to confirm your account, then sign in here.';S.authMode='login';authView();}
       }
     } else if(form.id==='join-form'){
       const code=$('#join-code').value,name=$('#join-name').value.trim();if(!/^\d{6}$/.test(code)||!name)throw new Error('Enter a six digit code and your name.');
@@ -732,7 +790,7 @@ document.addEventListener('submit',async event=>{
     }else if(form.id==='text-answer-form'){const answer=$('#player-text').value.trim();if(answer)sendAnswer(answer);}
     else if(form.id==='draw-form'){send({type:'draw',mode:$('#draw-mode').value,count:Number($('#draw-count').value)});}
     else if(form.id==='password-form'){await authRequest('user',{password:$('#new-password').value},'PUT',await getToken());form.reset();toast('Your password has been updated.');}
-  }catch(error){const target=form.id==='account-chat-form'?$('#account-chat-error'):$('#form-error');if(target)target.innerHTML=`<div class="error-note">${esc(error.message)}</div>`;else toast(error.message,true);}
+  }catch(error){if(form.id==='auth-form'&&S.authMode!=='reset'&&turnstileToken)resetTurnstile();const message=form.id==='auth-form'&&/captcha/i.test(error.message)?'Verification failed. Please try again.':error.message;const target=form.id==='account-chat-form'?$('#account-chat-error'):$('#form-error');if(target)target.innerHTML=`<div class="error-note">${esc(message)}</div>`;else toast(message,true);}
   finally{if(button?.isConnected){button.innerHTML=original;if(form.id==='text-answer-form')refreshAnswerUI();else button.disabled=false;}}
 });
 document.addEventListener('keydown',event=>{
@@ -748,6 +806,7 @@ document.addEventListener('keydown',event=>{
 });
 let routeVersion=0;
 async function route() {
+  discardTurnstile();
   const version=++routeVersion,raw=location.hash.slice(1),[path,...parts]=raw.split('/');
   if(path==='learn'){S.section='learn';S.learnReturn=location.hash;try{sessionStorage.setItem('gather.section','learn');sessionStorage.setItem('gather.learn.route',S.learnReturn);}catch{}}
   else if(path==='account'&&!S.section){try{S.section=sessionStorage.getItem('gather.section')||'quiz';S.learnReturn=sessionStorage.getItem('gather.learn.route')||'#learn';}catch{S.section='quiz';}}

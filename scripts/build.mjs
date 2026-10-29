@@ -7,7 +7,7 @@ setDefaultResultOrder('ipv4first');
 const runtime=await loadConfig();
 const apiUrl=(runtime.PUBLIC_API_URL || '').replace(/\/$/,'');
 if(process.env.GITHUB_ACTIONS==='true'&&!apiUrl)throw new Error('Set the PUBLIC_API_URL repository variable before publishing.');
-const browserConfig={apiUrl,supabaseUrl:'',supabaseKey:''};
+const browserConfig={apiUrl,supabaseUrl:'',supabaseKey:'',turnstileSiteKey:'0x4AAAAAAFqm15jtYVtkHupb'};
 if(apiUrl){
  const endpoint=new URL(apiUrl);
  if(endpoint.protocol!=='https:'||endpoint.username||endpoint.password)throw new Error('PUBLIC_API_URL must be a public HTTPS URL.');
