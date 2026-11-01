@@ -2,7 +2,7 @@
 
 Free, open-source live quizzes for everyone.
 
-[Open Gather](https://gatherlive.github.io/)
+[Open Gather](https://gatherlive.github.io/)  |  [how-to-use guide](https://github.com/GatherLive/gatherlive.github.io/blob/main/how-to-use.md)
 
 - Join with a six-digit code. No guest account needed.
 - 11 question types with images, timers, and leaderboards.
