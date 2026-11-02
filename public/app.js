@@ -413,6 +413,22 @@ async function hostQuiz(quizId, settings) {
   S.room={code:result.code,role:'host'};sessionStorage.setItem(`gather.host.${result.code}`,'1');location.hash=`#room/${result.code}`;connectRoom();
 }
 function roomLink(code) { return `${location.origin}${location.pathname}#join/${code}`; }
+function normalizePlayerName(name){return name.normalize('NFKC').trim().replace(/\s+/gu,' ').toLocaleLowerCase('en-US');}
+function playerRoomKey(code){return `gather.player.${code}`;}
+function playerNameKey(code,name){return `${playerRoomKey(code)}.${encodeURIComponent(JSON.stringify(normalizePlayerName(name)))}`;}
+function savedPlayer(code,name){
+  for(const [storage,key] of [[localStorage,playerNameKey(code,name)],[localStorage,playerRoomKey(code)],[sessionStorage,playerRoomKey(code)]])try{
+    const player=JSON.parse(storage.getItem(key)||'null');if(player?.name&&normalizePlayerName(player.name)===normalizePlayerName(name))return player;
+  }catch{}
+  return null;
+}
+function forgetPlayer(room,clearAnswers=false){
+  const matches=player=>player&&((room.playerId&&player.playerId===room.playerId)||(room.resumeToken&&player.resumeToken===room.resumeToken));
+  for(const storage of [localStorage,sessionStorage])try{
+    for(const key of [playerNameKey(room.code,room.name),playerRoomKey(room.code)])if(matches(JSON.parse(storage.getItem(key)||'null')))storage.removeItem(key);
+  }catch{}
+  if(clearAnswers)try{for(let i=sessionStorage.length-1;i>=0;i--)if(sessionStorage.key(i)?.startsWith(`gather.answer.${room.code}.`))sessionStorage.removeItem(sessionStorage.key(i));}catch{}
+}
 function disconnectRoom() {
   S.syncTimers?.forEach(clearTimeout);S.syncTimers=[];S.chat?.destroy();S.chat=null;
   S.wsGeneration++;clearTimeout(S.reconnectTimer);clearInterval(S.heartbeat);clearTimeout(S.connectTimeout);if(S.ws){S.ws.onclose=null;S.ws.close();}S.ws=null;S.connected=false;S.connectionStatus='disconnected';S.images?.close();S.images=null;
@@ -443,7 +459,11 @@ async function openSocket() {
     if(generation!==S.wsGeneration)return;S.lastSocketMessage=Date.now();if(event.data==='pong')return;let data;try{data=JSON.parse(event.data);}catch{return;}
     if(data.type==='welcome') {
       room.playerId=data.playerId;room.resumeToken=data.resumeToken;
-      if(room.role==='player')sessionStorage.setItem(`gather.player.${room.code}`,JSON.stringify(room));
+      if(room.role==='player'){
+        const saved=JSON.stringify(room);
+        try{localStorage.setItem(playerRoomKey(room.code),saved);localStorage.setItem(playerNameKey(room.code,room.name),saved);}catch{}
+        try{sessionStorage.setItem(playerRoomKey(room.code),saved);}catch{}
+      }
       S.images?.prepare(data.imageManifest);clearTimeout(S.connectTimeout);
     } else if(S.chat?.receive(data)) {return;
     } else if(data.type==='state') {
@@ -466,7 +486,13 @@ async function openSocket() {
       S.answerPending=false;if(data.accepted||data.answered){S.answerSent=true;sessionStorage.setItem(`gather.answer.${room.code}.${data.questionId}`,JSON.stringify({answer:S.selection}));refreshAnswerUI();}else{toast(data.message||'Your answer could not be accepted.',true);refreshAnswerUI();}
     } else if(data.type==='draw') {if(S.roomState)S.roomState.winners=data.winners;renderRoom();}
     else if(data.type==='error') {
-      S.answerPending=false;toast(data.message||'Something went wrong. Please try again.',true);
+      S.answerPending=false;
+      const invalidSession=/session could not be restored/i.test(data.message||'');
+      if(invalidSession||/removed from this quiz/i.test(data.message||''))forgetPlayer(room,true);
+      if(invalidSession&&room.role==='player'){
+        delete room.playerId;delete room.resumeToken;S.roomState=null;S.selection=null;S.pin=null;S.order=[];S.answerSent=false;S.answerPending=false;S.fatalRoomError=null;renderRoom();void openSocket();return;
+      }
+      toast(data.message||'Something went wrong. Please try again.',true);
       if((!S.connected&&!S.roomState&&!/temporar|retry|try again|slow down/i.test(data.message||''))||/kick|removed|not found|not exist|expired|unauthorized|invalid.*token|session.*restored/i.test(data.message||'')){S.fatalRoomError=data.message;clearTimeout(S.reconnectTimer);clearInterval(S.heartbeat);clearTimeout(S.connectTimeout);S.wsGeneration++;ws.close();S.connected=false;S.connectionStatus='disconnected';renderRoom();}else renderRoom();
     } else if(data.type==='pong') {if(S.clock.accept(data))updateTimer();}
   };
@@ -785,7 +811,7 @@ document.addEventListener('submit',async event=>{
       }
     } else if(form.id==='join-form'){
       const code=$('#join-code').value,name=$('#join-name').value.trim();if(!/^\d{6}$/.test(code)||!name)throw new Error('Enter a six digit code and your name.');
-      let previous;try{previous=JSON.parse(sessionStorage.getItem(`gather.player.${code}`)||'null');}catch{}
+      const previous=savedPlayer(code,name);
       S.room={...previous,code,role:'player',name};localStorage.setItem('gather.name',name);S.fatalRoomError=null;location.hash=`#room/${code}`;connectRoom();
     }else if(form.id==='text-answer-form'){const answer=$('#player-text').value.trim();if(answer)sendAnswer(answer);}
     else if(form.id==='draw-form'){send({type:'draw',mode:$('#draw-mode').value,count:Number($('#draw-count').value)});}
@@ -826,7 +852,7 @@ async function route() {
   if(path==='room'){
     const code=parts[0];if(!/^\d{6}$/.test(code||'')){location.hash='#join';return;}
     if(S.room?.code===code&&S.ws){renderRoom();return;}
-    if(!S.room||S.room.code!==code){let player;try{player=JSON.parse(sessionStorage.getItem(`gather.player.${code}`)||'null');}catch{}
+    if(!S.room||S.room.code!==code){let player;try{player=JSON.parse(sessionStorage.getItem(playerRoomKey(code))||'null');}catch{}if(!player)try{player=JSON.parse(localStorage.getItem(playerRoomKey(code))||'null');}catch{}
       if(sessionStorage.getItem(`gather.host.${code}`)&&activeUser())S.room={code,role:'host'};else if(player)S.room=player;else{location.hash=`#join/${code}`;return;}}
     S.fatalRoomError=null;connectRoom();return;
   }

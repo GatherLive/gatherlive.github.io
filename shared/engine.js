@@ -264,6 +264,7 @@ export class RoomEngine {
     if (this.question && Object.hasOwn(player.answers, this.question.id)) this._answerCount++;
   }
   _touch() { this.updatedAt = this.now(); }
+  get participantCount() { return [...this.players.values()].filter(player => player.connected).length; }
   get question() { return this.quiz.questions[this.questionIndex] ?? null; }
   nextDeadline() { if(this.phase==='countdown'&&this.deadline<=this.now()&&this.waitingForImages())return null;return this.phase === 'question' || this.phase === 'countdown' ? this.deadline : null; }
   mediaStatus(){
@@ -301,7 +302,7 @@ export class RoomEngine {
     }
     if (this.phase === 'finished') fail('ROOM_FINISHED', 'This quiz has finished.');
     if (this.locked || (this.phase !== 'lobby' && !this.settings.allowLateJoin)) fail('ROOM_LOCKED', 'The host has closed joining.');
-    if (this.settings.participantLimit > 0 && this.players.size >= this.settings.participantLimit) fail('ROOM_FULL', 'This room has reached the host’s participant limit.');
+    if (this.settings.participantLimit > 0 && this.participantCount >= this.settings.participantLimit) fail('ROOM_FULL', 'This room has reached the host’s participant limit.');
     if (typeof name !== 'string') fail('INVALID_NAME', 'Enter a nickname.');
     name = name.normalize('NFKC').trim().replace(/\s+/gu, ' ');
     if (!name || name.length > 32 || /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(name)) fail('INVALID_NAME', 'Use a nickname of 1–32 characters.');
@@ -542,7 +543,9 @@ export class RoomEngine {
   }
   progress(playerId = null) {
     const me = this._me(playerId);
-    return { type: 'progress', answerCount: this._answerCount, participantCount: this.players.size, ...(me ? { me } : {}) };
+    const activePlayers = [...this.players.values()].filter(player => player.connected);
+    const answerCount = this.phase === 'question' && this.question ? activePlayers.filter(player => Object.hasOwn(player.answers, this.question.id)).length : this._answerCount;
+    return { type: 'progress', answerCount, participantCount: activePlayers.length, ...(me ? { me } : {}) };
   }
   snapshot(forHost = false, playerId = null, {media = false, conversation = false} = {}) {
     const q = this.question;
@@ -556,17 +559,15 @@ export class RoomEngine {
     if (question && !forHost && !revealed && !this.settings.showAnswerOptions && ['single','multi','true_false','poll'].includes(q.type)) {
       question.options = question.options.map(option => ({id:option.id,text:'',image:''}));
     }
-    const visiblePlayers = [];
-    const visibleLimit = forHost ? this.players.size : this.phase === 'lobby' ? 50 : 10;
-    for (const player of this.players.values()) {
-      if (visiblePlayers.length >= visibleLimit) break;
-      visiblePlayers.push(player);
-    }
+    const activePlayers = [...this.players.values()].filter(player => player.connected);
+    const visibleLimit = forHost ? activePlayers.length : this.phase === 'lobby' ? 50 : 10;
+    const visiblePlayers = activePlayers.slice(0, visibleLimit);
     const showScores = forHost || this.settings.showLeaderboard || this.phase === 'finished';
     const players = visiblePlayers.map((p) => ({ id: p.id, name: p.name, ...(showScores ? { score: p.score } : {}), connected: p.connected, answered: !!q && Object.hasOwn(p.answers, q.id) }));
+    const answerCount = this.phase === 'question' && q ? activePlayers.filter(player => Object.hasOwn(player.answers, q.id)).length : this._answerCount;
     // Public live updates stay bounded even with large rooms; reports retain every standing.
     const roundResults = this.roundResults.map((round) => ({ ...round, leaderboard: forHost ? round.leaderboard : this.settings.showLeaderboard ? round.leaderboard.slice(0, 10) : [] }));
-    const result = { code: this.code, title: this.quiz.title, phase: this.phase, role: forHost ? 'host' : playerId ? 'player' : 'spectator', questionIndex: this.questionIndex, totalQuestions: this.quiz.questions.length, round: this._round(), roundResults: clone(roundResults), question, deadline: this.deadline, serverNow: this.now(), players, participantCount: this.players.size, leaderboard: this.settings.showLeaderboard || forHost || this.phase === 'finished' ? clone(forHost ? this._leaderboard() : this._leaderboard().slice(0, 10)) : [], answerCount: this._answerCount, settings: clone(this.settings), locked: this.locked, winners: clone(this.winners) };
+    const result = { code: this.code, title: this.quiz.title, phase: this.phase, role: forHost ? 'host' : playerId ? 'player' : 'spectator', questionIndex: this.questionIndex, totalQuestions: this.quiz.questions.length, round: this._round(), roundResults: clone(roundResults), question, deadline: this.deadline, serverNow: this.now(), players, participantCount: activePlayers.length, leaderboard: this.settings.showLeaderboard || forHost || this.phase === 'finished' ? clone(forHost ? this._leaderboard() : this._leaderboard().slice(0, 10)) : [], answerCount, settings: clone(this.settings), locked: this.locked, winners: clone(this.winners) };
     // A countdown hint describes only the format. Never include content, IDs,
     // image URLs or decryption keys before the question opens. Opaque ciphertext
     // IDs may be sent separately for download readiness; they contain no answers.

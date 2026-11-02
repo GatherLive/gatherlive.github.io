@@ -155,7 +155,7 @@ const adapter={
    try{await serial(room,()=>persist(room));return code;}catch(error){await serial(room,()=>purge(code));throw error;}
   }throw new HttpError(503,'No room code available; retry.');
  },
- async list(ownerId){return [...rooms].filter(([,r])=>!r.closed&&r.engine.phase!=='finished'&&r.meta.ownerId===ownerId&&roomExpires(r)>Date.now()).map(([code,r])=>({code,roomId:r.meta.reportId,quizId:r.meta.quizId,title:r.meta.title,phase:r.engine.phase,participants:r.engine.players.size,expires:r.meta.expiresAt})).sort((a,b)=>b.expires-a.expires);},
+ async list(ownerId){return [...rooms].filter(([,r])=>!r.closed&&r.engine.phase!=='finished'&&r.meta.ownerId===ownerId&&roomExpires(r)>Date.now()).map(([code,r])=>({code,roomId:r.meta.reportId,quizId:r.meta.quizId,title:r.meta.title,phase:r.engine.phase,participants:r.engine.participantCount,expires:r.meta.expiresAt})).sort((a,b)=>b.expires-a.expires);},
  async close(code,ownerId,roomId,{unfinishedOnly=false}={}){
   const room=rooms.get(code);if(!room||room.closed||roomExpires(room)<=Date.now())throw new HttpError(404,'Quiz not found or expired.');
   await serial(room,async()=>{

@@ -119,7 +119,7 @@ export class GiveawayRoom extends DurableObject {
   }
   getSummary(ownerId) {
     if(!this.engine||this.purging||this.engine.phase==='finished'||this.expiresAt()<=Date.now()||this.meta.ownerId!==ownerId)return null;
-    return {code:this.engine.code,roomId:this.meta.reportId,quizId:this.meta.quizId,title:this.meta.title,phase:this.engine.phase,participants:this.engine.players.size,expires:this.meta.expiresAt};
+    return {code:this.engine.code,roomId:this.meta.reportId,quizId:this.meta.quizId,title:this.meta.title,phase:this.engine.phase,participants:this.engine.participantCount,expires:this.meta.expiresAt};
   }
   async closeRoom(ownerId,roomId,unfinishedOnly=false) {
     try{
