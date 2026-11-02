@@ -161,7 +161,7 @@ function settingsFrom(raw = {}, questions = []) {
     }
     if (assigned.size !== questions.length) fail('INVALID_SETTINGS', 'Assign each question to exactly one round.');
   }
-  return { shuffleQuestions: boolean('shuffleQuestions', false), shuffleOptions: boolean('shuffleOptions', false), scoring, allowLateJoin: boolean('allowLateJoin', true), showLeaderboard: boolean('showLeaderboard', true), showQuestionType: boolean('showQuestionType', false), showAnswerOptions: boolean('showAnswerOptions', true), participantLimit, questionDelay, roundsEnabled, rounds, ...chatSettings(raw) };
+  return { shuffleQuestions: boolean('shuffleQuestions', false), shuffleOptions: boolean('shuffleOptions', false), shuffleTrueFalse: boolean('shuffleTrueFalse', false), scoring, allowLateJoin: boolean('allowLateJoin', true), showLeaderboard: boolean('showLeaderboard', true), showQuestionType: boolean('showQuestionType', false), showAnswerOptions: boolean('showAnswerOptions', true), participantLimit, questionDelay, roundsEnabled, rounds, ...chatSettings(raw) };
 }
 
 export class RoomEngine {
@@ -183,7 +183,7 @@ export class RoomEngine {
         return ids.map((id) => questionsById.get(id));
       });
     } else if (this.settings.shuffleQuestions) this.quiz.questions = shuffled(this.quiz.questions);
-    for (const q of this.quiz.questions) if (q.options && (this.settings.shuffleOptions || q.type === 'order')) q.options = shuffled(q.options);
+    for (const q of this.quiz.questions) if (q.options && (q.type === 'order' || (this.settings.shuffleOptions && (q.type !== 'true_false' || this.settings.shuffleTrueFalse)))) q.options = shuffled(q.options);
     this.imagePlan = createImagePlan(this.quiz.questions, mediaOrigin);
     this._indexImages();
     this.phase = 'lobby';
