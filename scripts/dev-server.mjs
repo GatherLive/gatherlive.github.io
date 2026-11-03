@@ -3,6 +3,7 @@ import {readFile,writeFile,appendFile,rename,mkdir,readdir,unlink,rmdir} from 'n
 import {resolve,extname,dirname,join,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {WebSocketServer} from 'ws';
+import {createLocalSite} from './local-site.mjs';
 import {loadConfig} from './config.mjs';
 import {RoomEngine} from '../shared/engine.js';
 import {emptyLearningProgress,mergeLearningProgress,resetLearningProgress} from '../shared/learning-progress.js';
@@ -28,11 +29,12 @@ function updateAccess(change){
     return result;
   });accessQueue=task.catch(()=>{});return task;
 }
-const redeemLocal=request=>updateAccess(()=>redeemChatCode(env,accessStore,request));
+const redeemLocal=request=>updateAccess(()=>{const result=redeemChatCode(env,accessStore,request),row=accessStore.applications.get(request.ownerKey);if(result.ok&&row&&row.status!=='approved')accessStore.applications.set(request.ownerKey,{...row,status:'approved',updatedAt:Date.now()});return result;});
 async function accountChatAccess(ownerId){
   if(!env.CHAT_CODE_PEPPER)return false;
   await accessQueue;return accessStore.account(await chatOwnerKey(env,ownerId));
 }
+const site=await createLocalSite({env,stateDir,access:()=>accessStore,waitAccess:()=>accessQueue,updateAccess});
 const rooms=new Map();const LIFETIME=86400000;
 const FINISHED_RETENTION=15*60*1000;
 function roomExpires(room){return room.engine?.phase==='finished'&&Number.isFinite(room.engine.finishedAt)?room.engine.finishedAt+FINISHED_RETENTION:room.meta.expiresAt;}
@@ -134,6 +136,9 @@ async function withLearning(ownerId,method,progress){
   try{return await task;}finally{if(learningQueues.get(path)===queued)learningQueues.delete(path);}
 }
 const adapter={
+ async announcement(){return site.snapshot();},
+ async chatApplication(ownerId){return site.application(ownerId);},
+ async applyChat(user){if((deletingOwners.get(user.id)||0)>Date.now())throw new HttpError(409,'Account deletion is in progress.');return site.apply(user);},
  async learning(ownerId,method,progress){return withLearning(ownerId,method,progress);},
  async chatAccess(ownerId){return accountChatAccess(ownerId);},
  async unlockChat(ownerId,code){
@@ -167,15 +172,26 @@ const adapter={
   });
  },
  async report(code,ownerId){const r=rooms.get(code);if(!r||r.closed||roomExpires(r)<=Date.now())throw new HttpError(404,'Room not found.');if(r.meta.ownerId!==ownerId)throw new HttpError(403,'This room belongs to another host.');if(r.engine.phase!=='finished')throw new HttpError(409,'Finish the quiz first.');return {id:r.meta.reportId,quizId:r.meta.quizId,title:r.meta.title,results:r.engine.report()};},
- async purgeOwner(ownerId){deletingOwners.set(ownerId,Date.now()+120000);await withLearning(ownerId,'PURGE');for(const [code,r] of rooms)if(r.meta.ownerId===ownerId)await serial(r,()=>purge(code));if(env.CHAT_CODE_PEPPER){const key=await chatOwnerKey(env,ownerId);if(accessStore.account(key)||accessStore.attempt(key))await updateAccess(()=>accessStore.revoke(key));}}
+ async purgeOwner(ownerId){deletingOwners.set(ownerId,Date.now()+120000);await withLearning(ownerId,'PURGE');for(const [code,r] of rooms)if(r.meta.ownerId===ownerId)await serial(r,()=>purge(code));if(env.CHAT_CODE_PEPPER){const key=await chatOwnerKey(env,ownerId);if(accessStore.account(key)||accessStore.attempt(key))await updateAccess(()=>accessStore.revoke(key));await site.eraseApplication(ownerId);}}
 };
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.webp':'image/webp','.ico':'image/x-icon','.json':'application/json','.txt':'text/plain'};
 const csp="default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.workers.dev wss://*.workers.dev https://challenges.cloudflare.com ws://localhost:* ws://127.0.0.1:*; frame-src https://challenges.cloudflare.com; font-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'";
 const rates=new Map();
-function rateLimit(req){const media=/^\/api\/rooms\/\d{6}\/media\//.test(req.url),key=(req.socket.remoteAddress||'local')+(media?':media':':api'),now=Date.now();let item=rates.get(key);if(!item||now-item.start>=60000){item={start:now,count:0};rates.set(key,item);}return ++item.count<=(media?3000:240);}
+function rateLimit(req){const media=/^\/api\/(?:site\/|rooms\/\d{6}\/(?:media\/|ws$))/.test(req.url),key=(req.socket.remoteAddress||'local')+(media?':media':':api'),now=Date.now();let item=rates.get(key);if(!item||now-item.start>=60000){item={start:now,count:0};rates.set(key,item);}return ++item.count<=(media?3000:240);}
 function webRequest(req){return new Request(`http://${req.headers.host||`${host}:${port}`}${req.url}`,{method:req.method,headers:req.headers,...(!['GET','HEAD'].includes(req.method)?{body:req,duplex:'half'}:{})});}
 async function nodeResponse(res,response){res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()));}
+let localExtension=null;
+// Optional development hooks stay in local configuration.
+if(port>0&&['127.0.0.1','localhost','::1'].includes(host)){
+  const extensionModule=new URL('../.local/dev-extension.mjs',import.meta.url);
+  let module;try{module=await import(extensionModule.href);}catch(error){if(error.code!=='ERR_MODULE_NOT_FOUND'||error.url!==extensionModule.href)throw error;}
+  if(module)localExtension=await module.createDevExtension({env,stateDir,port,site,rooms,adapter,serial,persist,persistConversation,broadcast,sendConversation,roomExpires,accountChatAccess});
+}
 const server=http.createServer(async(req,res)=>{
+ try{
+  const extensionResponse=localExtension?await localExtension(webRequest(req),req.socket.remoteAddress):null;
+  if(extensionResponse)return nodeResponse(res,extensionResponse);
+ }catch{return nodeResponse(res,json({error:'The local extension could not complete this request.'},503));}
  try{
   if(req.url.startsWith('/api/')){
    if(!rateLimit(req))return nodeResponse(res,json({error:'Too many requests. Please wait a minute.'},429));
@@ -199,9 +215,14 @@ const server=http.createServer(async(req,res)=>{
   res.end(req.method==='HEAD'?undefined:data);
  }catch(error){console.error(JSON.stringify({event:'local_http_error',name:error.name}));if(!res.headersSent)res.writeHead(500,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'Request could not complete. Please retry.'}));}
 });
+const siteWss=new WebSocketServer({noServer:true,maxPayload:64});
 const wss=new WebSocketServer({noServer:true,maxPayload:MAX_MESSAGE_BYTES});
 server.on('upgrade',(req,socket,head)=>{
  let request;try{request=webRequest(req);}catch{socket.destroy();return;}
+ if(new URL(request.url).pathname==='/api/site/updates'){
+  if(!originAllowed(request,env)||!rateLimit(req)){socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');socket.destroy();return;}
+  siteWss.handleUpgrade(req,socket,head,ws=>{void site.subscribe(ws);});return;
+ }
  const code=new URL(request.url).pathname.match(/^\/api\/rooms\/(\d{6})\/ws$/)?.[1],room=rooms.get(code);
  if(!originAllowed(request,env)||!room||room.closed||roomExpires(room)<=Date.now()||!rateLimit(req)){socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');socket.destroy();return;}
  wss.handleUpgrade(req,socket,head,ws=>{
@@ -212,7 +233,7 @@ server.on('upgrade',(req,socket,head)=>{
   identity.acceptedAt=Date.now();
   const applyAuth=async(auth)=>{
     if(!active()||expireAuth())return;
-    if(auth.chatUnlocked&&auth.identity.role==='host'&&!room.engine.chatUnlocked&&room.engine.phase!=='finished'){room.engine.authorizeChat({enable:false});await persist(room);}
+    if(auth.identity.role==='host'&&room.engine.phase!=='finished'&&room.engine.chatUnlocked!==auth.chatUnlocked){if(auth.chatUnlocked)room.engine.authorizeChat({enable:false});else room.engine.revokeChat();await persist(room);await persistConversation(room);}
     Object.assign(identity,auth.identity);clearTimeout(authTimer);
     if(identity.playerId){
       for(const [other,id] of room.clients)if(other!==ws&&id.playerId===identity.playerId){id.superseded=true;delete id.playerId;other.close(4001,'Connected on another tab.');}

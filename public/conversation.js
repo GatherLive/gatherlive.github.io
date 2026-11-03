@@ -2,8 +2,8 @@ export const CHAT_OPTIONS=[['off','Off'],['lobby','Lobby only'],['breaks','Betwe
 const EMOJI=['👍','❤️','😂','🎉','👏','😮'];
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export class RoomChat {
-  constructor({state,send,notify,modal,closeModal,id,icon}) {
-    Object.assign(this,{state,send,notify,modal,closeModal,id,icon});
+  constructor({state,send,notify,modal,closeModal,id,icon,accessStatus}) {
+    Object.assign(this,{state,send,notify,modal,closeModal,id,icon,accessStatus});
     this.messages=[];this.announcement=null;this.revision=-1;this.meta=null;this.open=false;this.draft='';this.replyTo=null;this.emojiFor=null;this.menuFor=null;this.pending=new Map();this.unread=0;this.sending=false;
     try{this.hidden=localStorage.getItem('gather.chat.hidden')==='true';}catch{this.hidden=false;}
     this.viewport=()=>{const overlay=document.querySelector('.chat-overlay');if(overlay&&window.visualViewport){overlay.style.height=window.visualViewport.height+'px';overlay.style.top=window.visualViewport.offsetTop+'px';}};
@@ -29,6 +29,7 @@ export class RoomChat {
       this.messages=[];this.announcement=null;this.draft='';this.replyTo=null;this.emojiFor=null;this.menuFor=null;this.unread=0;
       if(document.querySelector('#chat-settings-form,#chat-unlock-form'))this.closeModal();
     }
+    if(this.meta?.unlocked&&document.querySelector('#chat-unlock-form')){this.closeModal();this.settings();}
     if(!this.meta?.chatReplies)this.replyTo=null;if(!this.meta?.chatReactions)this.emojiFor=null;
     if(!this.available())this.close();
   }
@@ -77,7 +78,12 @@ export class RoomChat {
   tools() {
     const phase=this.state().roomState?.phase;if(!this.meta||phase==='finished')return '';
     const host=this.isHost(),available=this.available(),focus=['countdown','question'].includes(phase);
-    return `${host?`${!focus?`<button class="quiet-button" data-action="announcement-compose">${this.icon('announce',16)} Announce</button>`:''}<button class="quiet-button" data-action="chat-settings">${this.icon(this.meta.unlocked?'settings':'lock',15)} ${this.meta.unlocked?'Chat settings':'Unlock chat'}</button>`:''}${available?`<button class="quiet-button chat-launch" data-action="${this.hidden?'chat-show':'chat-toggle'}">${this.icon('chat',16)} ${this.hidden?'Show chat':'Chat'}${!this.hidden&&this.unread?`<span class="chat-unread">${this.unread}</span>`:''}</button>`:''}`;
+    return `${host?`${!focus?`<button class="quiet-button" data-action="announcement-compose">${this.icon('announce',16)} Announce</button>`:''}<button class="quiet-button" data-action="chat-settings">${this.icon(this.meta.unlocked?'settings':'lock',15)} ${this.meta.unlocked?'Chat settings':'Unlock chat'}</button>${!this.meta.unlocked?this.applicationButton():''}`:''}${available?`<button class="quiet-button chat-launch" data-action="${this.hidden?'chat-show':'chat-toggle'}">${this.icon('chat',16)} ${this.hidden?'Show chat':'Chat'}${!this.hidden&&this.unread?`<span class="chat-unread">${this.unread}</span>`:''}</button>`:''}`;
+  }
+  applicationButton(className='quiet-button') {
+    const state=this.state(),value=state.chatApplicationOwner===state.session?.user?.id?state.chatApplication:null;
+    const pending=value?.status==='pending',waiting=value?.status==='declined'&&value.retryAt>Date.now();
+    return `<button class="${className}" type="button" data-action="apply-chat" data-apply-chat ${pending||waiting?'disabled':''}>${pending?'Request pending':waiting?'Request declined':'Apply for chat access'}</button>`;
   }
   announcementView() {
     const item=this.announcement;if(!item||this.dismissed===item.id||['countdown','question','finished'].includes(this.state().roomState?.phase))return '';
@@ -122,7 +128,7 @@ export class RoomChat {
     const config=this.meta??{};
     if(!config.unlocked){
       if(['countdown','question'].includes(this.state().roomState?.phase)){this.modal('Chat is locked','<p>Enter your invitation code before the quiz or between questions.</p>');return;}
-      this.modal('Unlock chat',`<form id="chat-unlock-form"><p>One invitation code enables chat for your account and future quizzes.</p><div class="field"><label for="chat-unlock-code">12-digit code</label><input id="chat-unlock-code" type="password" inputmode="numeric" pattern="[0-9]{12}" minlength="12" maxlength="12" autocomplete="off" required placeholder="••••••••••••"></div><button class="btn primary full" type="submit">${this.icon('lock',16)} Unlock chat</button></form>`);return;
+      this.modal('Unlock chat',`<form id="chat-unlock-form"><p>One invitation code enables chat for your account and future quizzes.</p><div class="field"><label for="chat-unlock-code">12-digit code</label><input id="chat-unlock-code" type="password" inputmode="numeric" pattern="[0-9]{12}" minlength="12" maxlength="12" autocomplete="off" required placeholder="••••••••••••"></div><div class="chat-access-actions"><button class="btn primary" type="submit">${this.icon('lock',16)} Unlock chat</button>${this.applicationButton('btn ghost')}</div><p class="small muted" data-chat-application-note hidden></p></form>`);void this.accessStatus?.().catch(()=>{});return;
     }
     this.modal('Chat settings',`<form id="chat-settings-form"><div class="field"><label for="live-chat-mode">When chat opens</label><select id="live-chat-mode">${CHAT_OPTIONS.map(([value,label])=>`<option value="${value}" ${config.chatMode===value?'selected':''}>${label}</option>`).join('')}</select><span class="hint">Always closed during countdowns and questions.</span></div><label class="checkbox-row"><input type="checkbox" id="live-chat-replies" ${config.chatReplies?'checked':''}>Replies</label><label class="checkbox-row"><input type="checkbox" id="live-chat-reactions" ${config.chatReactions?'checked':''}>Emoji reactions</label><button class="btn primary full" type="submit">Save</button></form>`,this.messages.length?'<button class="quiet-button" data-action="chat-clear">Clear messages</button>':'');
   }

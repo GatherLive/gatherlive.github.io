@@ -46,7 +46,7 @@ export function redeemChatCode(env,store,request,now=Date.now()) {
   return {ok:true};
 }
 export class MemoryChatCodes {
-  constructor(saved={}){this.claims=new Map(saved.claims??[]);this.attempts=new Map(saved.attempts??[]);}
+  constructor(saved={}){this.claims=new Map(saved.claims??[]);this.attempts=new Map(saved.attempts??[]);this.applications=new Map(saved.applications??[]);this.erasures=new Map(saved.erasures??[]);}
   prune(before){for(const [key,value]of this.attempts)if(value.at<before)this.attempts.delete(key);}
   attempt(key){return this.attempts.get(key);}
   saveAttempt(key,value){this.attempts.set(key,value);}
@@ -54,5 +54,5 @@ export class MemoryChatCodes {
   account(key){return [...this.claims.values()].includes(key);}
   saveClaim(key,value){this.claims.set(key,value);}
   revoke(key){for(const [digest,owner]of this.claims)if(owner===key)this.claims.set(digest,'');this.attempts.delete(key);}
-  serialize(){return {claims:[...this.claims],attempts:[...this.attempts]};}
+  serialize(){return {claims:[...this.claims],attempts:[...this.attempts],applications:[...this.applications],erasures:[...this.erasures]};}
 }

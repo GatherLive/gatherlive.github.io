@@ -83,6 +83,12 @@ export async function handleApi(request, env, rooms) {
     if (pathname === '/' && request.method === 'GET') response=json({service:'Gather API',ok:true});
     else if (pathname === '/api/config' && request.method === 'GET') response=json(publicConfig(env));
     else if (pathname === '/api/health' && request.method === 'GET') response=json({ok:true,service:'gather',mode:env.LOCAL_DEV ? 'local' : 'cloudflare'});
+    else if (pathname === '/api/site/announcement' && request.method === 'GET') response=json(await rooms.announcement());
+    else if (pathname === '/api/account/chat/request' && request.method === 'POST') {
+      const user=await authenticate(env,bearer(request));
+      await readJson(request,1024);
+      response=json(await rooms.applyChat(user));
+    }
     else if (pathname === '/api/rooms' && request.method === 'POST') {
       const token = bearer(request), user = await authenticate(env,token);
       const body = await readJson(request);
@@ -114,9 +120,23 @@ export async function handleApi(request, env, rooms) {
       if(typeof body?.roomId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(body.roomId))throw new HttpError(400,'Refresh your rooms before closing one.');
       await rooms.close(code,user.id,body.roomId);
       response=json({closed:true});
+    } else if (/^\/api\/rooms\/\d{6}\/report$/.test(pathname) && request.method === 'GET') {
+      const user=await authenticate(env,bearer(request));
+      response=json({report:await rooms.report(pathname.split('/')[3],user.id)});
     } else if (/^\/api\/rooms\/\d{6}\/report$/.test(pathname) && request.method === 'POST') {
       const token=bearer(request), user=await authenticate(env,token), code=pathname.split('/')[3];
       const report=await rooms.report(code,user.id);
+      const body=request.body&&request.headers.get('Content-Length')!=='0'?await readJson(request,1024):{};
+      if(!body||typeof body!=='object'||Array.isArray(body))throw new HttpError(400,'Choose a valid result format.');
+      if(body.detailed!=null&&typeof body.detailed!=='boolean')throw new HttpError(400,'Choose a valid result format.');
+      if(body.reportId!=null&&body.reportId!==report.id)throw new HttpError(409,'This room has changed. Refresh the results.');
+      if(body.detailed!==true){
+        // A summary contains no individual answers or question answer keys.
+        const {players,questions,questionTimings,detailVersion,...summary}=report.results;
+        const previous=await supabase(env,`/rest/v1/giveaway_reports?id=eq.${report.id}&owner_id=eq.${user.id}&select=results`,token);
+        // Saving the summary again must not erase details deliberately saved earlier.
+        report.results=previous?.[0]?.results?.questions?{...previous[0].results,...summary}:summary;
+      }
       // A live game retains its own quiz copy when the saved set is deleted.
       const quizzes=report.quizId ? await supabase(env,`/rest/v1/giveaway_quizzes?id=eq.${report.quizId}&select=id`,token) : [];
       const payload={id:report.id,owner_id:user.id,quiz_id:quizzes[0]?.id || null,room_code:code,quiz_title:report.title,results:report.results};
@@ -139,7 +159,7 @@ export async function handleApi(request, env, rooms) {
         const body=await readJson(request,1024);
         await rooms.unlockChat(user.id,body?.code);
         response=json({unlocked:true});
-      }else response=json({unlocked:await rooms.chatAccess(user.id)});
+      }else response=json({unlocked:await rooms.chatAccess(user.id),...(rooms.chatApplication?{application:await rooms.chatApplication(user.id)}:{})});
     } else if (pathname === '/api/account' && request.method === 'DELETE') {
       const token=bearer(request), user=await authenticate(env,token);
       await rooms.purgeOwner(user.id);

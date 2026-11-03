@@ -21,9 +21,13 @@ const patterns=[
   /https:\/\/[a-z0-9]{20}\.supabase\.co\b/i,
 ];
 const exampleDomain=domain=>/^(?:localhost|(?:[^.]+\.)*(?:example\.(?:com|org|net|test|invalid)|test\.invalid))$/i.test(domain);
-function identifyingLiterals(source){
+// This public support address is explicitly approved. Other emails
+// and all credential/configuration checks remain subject to the existing rules.
+const publicContactEmail = 'gathercontact@proton.me';
+const publicEmailFiles=new Set(['public/legal.js','scripts/privacy-check.mjs']);
+function identifyingLiterals(source,name){
   const emails=source.matchAll(/\b[A-Za-z0-9.!#$%&'*+\/=?^_`{|}~-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})\b/g);
-  for(const [,domain]of emails)if(!exampleDomain(domain))return true;
+  for(const [address,domain]of emails)if(!exampleDomain(domain)&&!(publicEmailFiles.has(name)&&address===publicContactEmail))return true;
   const workers=source.matchAll(/https?:\/\/([a-z0-9-]+)\.([a-z0-9-]+)\.workers\.dev\b/gi);
   for(const [,worker,account]of workers)if(!/^(?:example|fixture|test|your-worker)$/i.test(worker)&&!/^(?:example|fixture|test|your-subdomain)$/i.test(account))return true;
   return false;
@@ -53,7 +57,7 @@ async function scan(directory){
   if(ignoredFile(name)||binary.test(name))continue;
   if((await stat(path)).size>2_000_000)continue;
   const source=await readFile(path,'utf8');
-  if(privateValues.some(value=>source.includes(value))||patterns.some(pattern=>pattern.test(source))||identifyingLiterals(source))failures.push(name);
+  if(privateValues.some(value=>source.includes(value))||patterns.some(pattern=>pattern.test(source))||identifyingLiterals(source,name))failures.push(name);
  }
 }
 await scan(projectRoot);

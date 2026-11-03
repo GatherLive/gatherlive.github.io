@@ -1,3 +1,6 @@
+import {SiteNews} from './site-news.js';
+import {policyLinks,policyNotice,policyPage} from './legal.js';
+import {reportIcon} from './report-icons.js';
 import {RoomImages} from './media.js';
 import {RoomChat,CHAT_OPTIONS} from './conversation.js';
 import {RoomClock} from './timing.js';
@@ -36,7 +39,8 @@ function safeImage(value) {
   try { const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password?u.href:''; }catch{return '';}
 }
 function nav() { return `<nav class="site-nav">${brand()}<div class="nav-right">${activeUser()?`${S.section==='learn'?'':'<a class="quiet-button" href="#dashboard">My quizzes</a>'}<a class="avatar" href="#account" aria-label="Account settings">${esc(activeUser().email?.[0]?.toUpperCase() || 'G')}</a>`:''}</div></nav>`; }
-function shell(content) { app.innerHTML = `<div class="shell">${nav()}${content}</div>`; }
+const siteNews=new SiteNews(apiURL);
+function shell(content) { app.innerHTML = `<div class="shell">${nav()}</div>${siteNews.slot()}<div class="shell">${content}</div>`;siteNews.render(); }
 function loading(message = 'Loading…') { shell(`<div class="loading-section"><span class="spinner"></span>${esc(message)}</div>`); }
 function modal(title, body, actions = '', onSetup) {
   $('#modal-root').innerHTML = `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><h2 id="modal-title">${esc(title)}</h2>${body}<div class="modal-actions"><button class="btn ghost" data-action="close-modal">Cancel</button>${actions}</div></section></div>`;
@@ -173,11 +177,11 @@ function home() {
 function authView() {
   discardTurnstile();
   const signup=S.authMode==='signup',recover=S.authMode==='recover',reset=S.authMode==='reset';
-  shell(`<main class="auth-layout"><section class="auth-card"><a class="quiet-button back-link" href="#">${icon('back',15)} Home</a><h1>${reset?'Reset password':recover?'Forgot password?':signup?'Create account':'Sign in'}</h1><form id="auth-form">${reset?'':`<div class="field"><label for="auth-email">Email</label><input id="auth-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required maxlength="254"></div>`}${recover?'':`<div class="field"><label for="auth-password">${reset?'New password':'Password'}</label><input id="auth-password" name="password" type="password" autocomplete="${signup||reset?'new-password':'current-password'}" placeholder="${signup||reset?'At least 8 characters':'Your password'}" minlength="${signup||reset?8:1}" required maxlength="128"></div>`}${S.authMessage?`<div class="info-note">${esc(S.authMessage)}</div>`:''}${reset?'':'<div id="turnstile-slot" class="turnstile-slot"></div>'}<div id="form-error" role="alert"></div><button class="btn primary full" type="submit">${reset?'Save password':recover?'Send reset link':signup?'Create account':'Sign in'} ${icon('arrow',16)}</button></form>${!reset?`<div class="auth-foot"><button class="quiet-button" data-action="auth-mode" data-mode="${signup||recover?'login':'signup'}">${signup||recover?'Sign in':'Create account'}</button>${!signup&&!recover?'<button class="quiet-button" data-action="auth-mode" data-mode="recover">Forgot password?</button>':''}</div>`:''}</section></main>`);
+  shell(`<main class="auth-layout"><section class="auth-card"><a class="quiet-button back-link" href="#">${icon('back',15)} Home</a><h1>${reset?'Reset password':recover?'Forgot password?':signup?'Create account':'Sign in'}</h1><form id="auth-form">${reset?'':`<div class="field"><label for="auth-email">Email</label><input id="auth-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required maxlength="254"></div>`}${recover?'':`<div class="field"><label for="auth-password">${reset?'New password':'Password'}</label><input id="auth-password" name="password" type="password" autocomplete="${signup||reset?'new-password':'current-password'}" placeholder="${signup||reset?'At least 8 characters':'Your password'}" minlength="${signup||reset?8:1}" required maxlength="128"></div>`}${S.authMessage?`<div class="info-note">${esc(S.authMessage)}</div>`:''}${reset?'':'<div id="turnstile-slot" class="turnstile-slot"></div>'}<div id="form-error" role="alert"></div>${signup?policyNotice():''}<button class="btn primary full" type="submit">${reset?'Save password':recover?'Send reset link':signup?'Create account':'Sign in'} ${icon('arrow',16)}</button></form>${!reset?`<div class="auth-foot"><button class="quiet-button" data-action="auth-mode" data-mode="${signup||recover?'login':'signup'}">${signup||recover?'Sign in':'Create account'}</button>${!signup&&!recover?'<button class="quiet-button" data-action="auth-mode" data-mode="recover">Forgot password?</button>':''}</div>`:''}</section></main>`);
   if(!reset)void mountTurnstile();
 }
 function joinView(code='') {
-  shell(`<main class="auth-layout"><section class="auth-card"><a class="quiet-button back-link" href="#">${icon('back',15)} Home</a><h1>Join quiz</h1><form id="join-form"><div class="field"><label for="join-code">Code</label><input id="join-code" class="code-input" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" placeholder="000000" value="${esc(code)}" required></div><div class="field"><label for="join-name">Name</label><input id="join-name" name="name" autocomplete="nickname" placeholder="Your name" maxlength="24" minlength="1" value="${esc(localStorage.getItem('gather.name')||'')}" required></div><div id="form-error" role="alert"></div><button type="submit" class="btn primary full">Join ${icon('arrow',16)}</button></form></section></main>`);if(code.length===6)setTimeout(()=>$('#join-name')?.focus(),50);
+  shell(`<main class="auth-layout join-layout"><section class="auth-card"><a class="quiet-button back-link" href="#">${icon('back',15)} Home</a><h1>Join quiz</h1><form id="join-form"><div class="field"><label for="join-code">Code</label><input id="join-code" class="code-input" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" placeholder="000000" value="${esc(code)}" required></div><div class="field"><label for="join-name">Name</label><input id="join-name" name="name" autocomplete="nickname" placeholder="Your name" maxlength="24" minlength="1" value="${esc(localStorage.getItem('gather.name')||'')}" required></div><div id="form-error" role="alert"></div><button type="submit" class="btn primary full">Join ${icon('arrow',16)}</button></form></section><footer class="join-legal">${policyLinks({newTab:true,returnTo:code.length===6?'#join/'+code:'#join'})}</footer></main>`);if(code.length===6)setTimeout(()=>$('#join-name')?.focus(),50);
 }
 async function dashboard() {
   loading();
@@ -232,7 +236,7 @@ function quizCards() {
 function dateLabel(value) { return new Date(value).toLocaleDateString(undefined,{month:'short',day:'numeric'}); }
 function reportList() {
   if(!S.reports.length)return `<div class="empty"><div class="empty-icon">${icon('trophy',27)}</div><h2>No results yet</h2></div>`;
-  return `<div class="table-wrap"><table class="report-table"><thead><tr><th>Quiz</th><th>Date</th><th>Players</th><th>Results</th></tr></thead><tbody>${S.reports.map(r=>`<tr><td>${esc(r.quiz_title||'Untitled quiz')}</td><td>${dateLabel(r.created_at)}</td><td>${(r.results?.leaderboard||r.results?.players||r.results||[]).length||0}</td><td><button class="quiet-button" data-action="report-view" data-id="${r.id}" aria-label="View ${esc(r.quiz_title)} results">View ${icon('arrow',13)}</button><button class="quiet-button" data-action="report-csv" data-id="${r.id}" aria-label="Download ${esc(r.quiz_title)} CSV">${icon('download',14)}</button></td></tr>`).join('')}</tbody></table></div>`;
+  return `<div class="table-wrap"><table class="report-table" role="table"><caption class="sr-only">Saved quiz results</caption><thead role="rowgroup"><tr role="row"><th id="saved-report-quiz" scope="col" role="columnheader">Quiz</th><th id="saved-report-date" scope="col" role="columnheader">Date</th><th id="saved-report-players" scope="col" role="columnheader">Players</th><th id="saved-report-actions" scope="col" role="columnheader">Results</th></tr></thead><tbody role="rowgroup">${S.reports.map(r=>`<tr role="row"><td role="cell" headers="saved-report-quiz">${esc(r.quiz_title||'Untitled quiz')}<span class="report-mobile-meta">${dateLabel(r.created_at)} · ${(r.results?.leaderboard||r.results?.players||r.results||[]).length||0} participants</span></td><td role="cell" headers="saved-report-date">${dateLabel(r.created_at)}</td><td role="cell" headers="saved-report-players">${(r.results?.leaderboard||r.results?.players||r.results||[]).length||0}</td><td role="cell" headers="saved-report-actions"><div class="report-row-actions"><span class="report-kind">${r.results?.questions&&r.results?.players?'Detailed':'Summary'}</span><button class="quiet-button" data-action="report-view" data-id="${esc(r.id)}" aria-label="View ${esc(r.quiz_title)} results">View ${icon('arrow',13)}</button><button class="icon-btn" data-action="report-csv" data-id="${esc(r.id)}" title="Download CSV" aria-label="Download ${esc(r.quiz_title)} CSV">${icon('download',15)}</button><button class="icon-btn report-delete" data-action="delete-report" data-id="${esc(r.id)}" title="Delete saved results" aria-label="Delete ${esc(r.quiz_title||'quiz')} results">${icon('trash',15)}</button></div></td></tr>`).join('')}</tbody></table></div>`;
 }
 function defaultSettings() { return {shuffleQuestions:false,shuffleOptions:false,shuffleTrueFalse:false,scoring:'accuracy',allowLateJoin:true,showLeaderboard:true,participantLimit:0,questionDelay:3,showQuestionType:false,showAnswerOptions:true,roundsEnabled:false,rounds:[],chatMode:'off',chatReplies:true,chatReactions:true}; }
 function chatSettingsEditor(d) {
@@ -434,7 +438,7 @@ function disconnectRoom() {
   S.wsGeneration++;clearTimeout(S.reconnectTimer);clearInterval(S.heartbeat);clearTimeout(S.connectTimeout);if(S.ws){S.ws.onclose=null;S.ws.close();}S.ws=null;S.connected=false;S.connectionStatus='disconnected';S.images?.close();S.images=null;
 }
 function connectRoom() {
-  const room=S.room;if(!room)return;disconnectRoom();S.clock=new RoomClock();S.chat=new RoomChat({state:()=>S,send,notify:toast,modal,closeModal,id:uid,icon});S.images=new RoomImages(S.config.apiUrl||'',room.code);S.connectionStatus='connecting';S.roomState=null;S.selection=null;S.answerSent=false;S.answerPending=false;S.retries=0;renderRoom();openSocket();
+  const room=S.room;if(!room)return;disconnectRoom();S.clock=new RoomClock();S.chat=new RoomChat({state:()=>S,accessStatus:async()=>{const owner=activeUser()?.id;const result=await backend('/api/account/chat',null,'GET');if(activeUser()?.id===owner)updateChatApplication(result.application);return result;},send,notify:toast,modal,closeModal,id:uid,icon});S.images=new RoomImages(S.config.apiUrl||'',room.code);S.connectionStatus='connecting';S.roomState=null;S.selection=null;S.answerSent=false;S.answerPending=false;S.retries=0;renderRoom();openSocket();
 }
 async function openSocket() {
   const room=S.room,generation=++S.wsGeneration;if(!room)return;
@@ -567,8 +571,8 @@ function renderRoom() {
   S.reorder?.cancel();
   const focused=document.activeElement?.id,selectionStart=document.activeElement?.selectionStart,selectionEnd=document.activeElement?.selectionEnd;
   const room=S.room,st=S.roomState,isHost=room?.role==='host';if(!room)return;
-  app.innerHTML=`<div class="room-wrap"><header class="room-nav">${brand()}<div class="row"><span class="room-code-small"><span class="code-label">Code </span><b>${esc(room.code)}</b></span><div class="connection ${S.connected?'':'offline'}" role="status" aria-live="polite" aria-atomic="true">${connectionLabel()}</div>${st?.me&&st.phase!=='lobby'?`<span class="player-score"><strong>${(st.me.score||0).toLocaleString()}</strong> pts</span>`:''}<button class="icon-btn" data-action="leave-room" title="Leave quiz" aria-label="Leave quiz">${icon('logout',16)}</button></div></header><div id="room-announcement"></div><div id="room-tools" class="room-tools" hidden></div>${S.fatalRoomError?`<div class="waiting-state"><h1>Unable to join</h1><p>${esc(S.fatalRoomError)}</p><a class="btn primary" href="#join" style="margin-top:25px">Try another code</a></div>`:!st?`<div class="loading-section"><span class="spinner"></span>Connecting…</div>`:st.phase==='lobby'?lobbyView(st,isHost):st.phase==='countdown'?countdownView(st,isHost):st.phase==='round_results'?roundResultsView(st,isHost):st.phase==='finished'?resultsView(st,isHost):questionView(st,isHost)}</div>`;
-  updateTimer();updateConnection();hydrateRoomImages();if(focused){const el=document.getElementById(focused);if(el){el.focus({preventScroll:true});try{el.setSelectionRange(selectionStart,selectionEnd);}catch{}}}
+  app.innerHTML=`<div class="room-wrap room-header"><header class="room-nav">${brand()}<div class="row"><span class="room-code-small"><span class="code-label">Code </span><b>${esc(room.code)}</b></span><div class="connection ${S.connected?'':'offline'}" role="status" aria-live="polite" aria-atomic="true">${connectionLabel()}</div>${st?.me&&st.phase!=='lobby'?`<span class="player-score"><strong>${(st.me.score||0).toLocaleString()}</strong> pts</span>`:''}<button class="icon-btn" data-action="leave-room" title="Leave quiz" aria-label="Leave quiz">${icon('logout',16)}</button></div></header></div>${siteNews.slot()}<div class="room-wrap"><div id="room-announcement"></div><div id="room-tools" class="room-tools" hidden></div>${S.fatalRoomError?`<div class="waiting-state"><h1>Unable to join</h1><p>${esc(S.fatalRoomError)}</p><a class="btn primary" href="#join" style="margin-top:25px">Try another code</a></div>`:!st?`<div class="loading-section"><span class="spinner"></span>Connecting…</div>`:st.phase==='lobby'?lobbyView(st,isHost):st.phase==='countdown'?countdownView(st,isHost):st.phase==='round_results'?roundResultsView(st,isHost):st.phase==='finished'?resultsView(st,isHost):questionView(st,isHost)}</div>`;
+  siteNews.render();updateTimer();updateConnection();hydrateRoomImages();if(focused){const el=document.getElementById(focused);if(el){el.focus({preventScroll:true});try{el.setSelectionRange(selectionStart,selectionEnd);}catch{}}}
   fitChoiceQuestion();
 }
 function lobbyView(st,isHost) {
@@ -637,7 +641,7 @@ function revealView(st,isHost) {
 function leaderboard(players) { return `<div class="leaderboard">${players.map((p,i)=>`<div class="leader-row"><span class="leader-rank">${(p.rank??i+1)===1?'✳':String(p.rank??i+1).padStart(2,'0')}</span><span class="leader-name">${esc(p.name)}${p.id===S.room?.playerId?' <span class="muted">(you)</span>':''}</span><span class="leader-points">${Number(p.score||0).toLocaleString()} <span class="muted small">pts</span></span></div>`).join('')}</div>`; }
 function resultsView(st,isHost) {
   const rounds=st.roundResults||[],show=st.settings?.showLeaderboard||isHost;
-  return `<main><div class="results-head"><h1>Quiz complete</h1><p>${esc(st.title)}</p></div>${rounds.length?roundHistory(rounds,show):show?leaderboard(st.leaderboard||[]):''}${st.winners?.length?`<div class="card draw-card results-controls"><h2>Draw winner${st.winners.length===1?'':'s'}</h2>${st.winners.map(p=>`<div class="winner-name">${esc(p.name)}</div>`).join('')}</div>`:''}${isHost?`<section class="results-controls"><div class="row wrap results-actions"><button class="btn" data-action="save-report">${icon('check',15)} Save results</button><button class="btn" data-action="results-csv">${icon('download',15)} CSV</button><a class="btn primary" href="#dashboard">My quizzes ${icon('arrow',15)}</a></div><p class="results-expiry-note muted">Unsaved results are deleted 15 minutes after the quiz ends.</p><details class="card draw-card"><summary>Random draw</summary><form id="draw-form" class="draw-form"><label class="sr-only" for="draw-mode">Eligible group</label><select class="input" id="draw-mode"><option value="all">All players</option><option value="correct">Players with a correct answer</option><option value="top">Top scorers</option></select><label class="sr-only" for="draw-count">Number of winners</label><input class="input" id="draw-count" type="number" min="1" max="50" value="1" required><button class="btn green" type="submit">${icon('shuffle',16)} Draw</button></form></details></section>`:`<div class="results-home"><a class="quiet-button" href="#">Home ${icon('arrow',14)}</a></div>`}</main>`;
+  return `<main><div class="results-head"><h1>Quiz complete</h1><p>${esc(st.title)}</p></div>${rounds.length?roundHistory(rounds,show):show?leaderboard(st.leaderboard||[]):''}${st.winners?.length?`<div class="card draw-card results-controls"><h2>Draw winner${st.winners.length===1?'':'s'}</h2>${st.winners.map(p=>`<div class="winner-name">${esc(p.name)}</div>`).join('')}</div>`:''}${isHost?`<section class="results-controls"><div class="row wrap results-actions"><a class="btn" href="#results/live/${st.code}">${reportIcon('analytics',18)} Detailed results</a><button class="btn" data-action="save-report">${icon('check',15)} Save results</button><button class="btn" data-action="results-csv">${icon('download',15)} CSV</button><a class="btn primary" href="#dashboard">My quizzes ${icon('arrow',15)}</a></div><p class="results-expiry-note muted">Unsaved results are deleted 15 minutes after the quiz ends.</p><details class="card draw-card"><summary>Random draw</summary><form id="draw-form" class="draw-form"><label class="sr-only" for="draw-mode">Eligible group</label><select class="input" id="draw-mode"><option value="all">All players</option><option value="correct">Players with a correct answer</option><option value="top">Top scorers</option></select><label class="sr-only" for="draw-count">Number of winners</label><input class="input" id="draw-count" type="number" min="1" max="50" value="1" required><button class="btn green" type="submit">${icon('shuffle',16)} Draw</button></form></details></section>`:`<div class="results-home"><a class="quiet-button" href="#">Home ${icon('arrow',14)}</a></div>`}</main>`;
 }
 function roundHistory(rounds,show=true) {
   return `<div class="round-history">${rounds.map(r=>`<section class="card round-history-card"><div class="row between"><h2>${esc(r.title)}</h2>${r.reward?`<span class="round-reward">${icon('trophy',15)} ${esc(r.reward)}</span>`:''}</div><div class="round-history-winners">${r.winners?.length?r.winners.map(p=>esc(p.name)).join(' · '):'No winner'}${r.tied?' <span class="muted">(tied)</span>':''}</div>${show?`<details><summary>Leaderboard</summary>${leaderboard(r.leaderboard||[])}</details>`:''}</section>`).join('')}</div>`;
@@ -653,20 +657,49 @@ function updateTimer() {
   const fill=$('#timer-fill');if(fill)fill.style.width=`${st.phase==='question'?Math.max(0,Math.min(100,(remainingMs??0)/((st.question?.timeLimit||20)*1000)*100)):0}%`;
 }
 setInterval(updateTimer,250);
-function accountChatView(unlocked=null,error='') {
+function chatApplicationControls(application=null){
+  const pending=application?.status==='pending',waiting=application?.status==='declined'&&application.retryAt>Date.now();
+  return `<button class="btn ghost" type="button" data-action="apply-chat" data-apply-chat ${pending||waiting?'disabled':''}>${pending?'Request pending':waiting?'Request declined':'Apply for chat access'}</button>`;
+}
+function updateChatApplication(application){
+  S.chatApplication=application;S.chatApplicationOwner=activeUser()?.id;
+  for(const button of $$('[data-apply-chat]')){
+    const pending=application?.status==='pending',waiting=application?.status==='declined'&&application.retryAt>Date.now();
+    button.disabled=pending||waiting;button.textContent=pending?'Request pending':waiting?'Request declined':'Apply for chat access';
+    button.title=waiting?'You can apply again on '+new Date(application.retryAt).toLocaleDateString():'';
+  }
+  for(const note of $$('[data-chat-application-note]')){
+    note.textContent=application?.status==='declined'?'Request declined.'+(application.retryAt>Date.now()?' You can apply again on '+new Date(application.retryAt).toLocaleDateString()+'.':' You can apply again.'):'';
+    note.hidden=!note.textContent;
+  }
+  S.chat?.refresh();
+}
+async function applyForChat(button){
+  const userId=activeUser()?.id;if(!userId)throw new Error('Please sign in to apply.');
+  button.disabled=true;
+  try{
+    const result=await backend('/api/account/chat/request',{});
+    if(activeUser()?.id!==userId)return;
+    updateChatApplication(result.application);
+    S.chat?.refresh();
+    if(result.unlocked){if($('#account-chat-content'))$('#account-chat-content').innerHTML=accountChatView(true);toast('Chat is already unlocked.');}
+    else toast('Request sent.');
+  }catch(error){button.disabled=false;throw error;}
+}
+function accountChatView(unlocked=null,error='',application=null) {
   if(error)return `<div class="error-note" role="alert">${esc(error)}</div><button class="btn" data-action="account-chat-refresh">Try again</button>`;
   if(unlocked===null)return '<p class="muted"><span class="spinner"></span> Loading…</p>';
   if(unlocked)return `<p class="account-chat-status">${icon('check',17)} Chat unlocked</p><p class="small muted">Available for all your quizzes.</p>`;
-  return `<form id="account-chat-form"><div class="field"><label for="account-chat-code">12-digit invitation code</label><input id="account-chat-code" type="password" inputmode="numeric" pattern="[0-9]{12}" minlength="12" maxlength="12" autocomplete="off" placeholder="••••••••••••" required></div><div id="account-chat-error" role="alert"></div><button class="btn primary" type="submit">${icon('lock',16)} Unlock chat</button></form>`;
+  return `<form id="account-chat-form"><div class="field"><label for="account-chat-code">12-digit invitation code</label><input id="account-chat-code" type="password" inputmode="numeric" pattern="[0-9]{12}" minlength="12" maxlength="12" autocomplete="off" placeholder="••••••••••••" required></div><div id="account-chat-error" role="alert"></div><div class="chat-access-actions"><button class="btn primary" type="submit">${icon('lock',16)} Unlock chat</button>${chatApplicationControls(application)}</div><p class="small muted" data-chat-application-note hidden></p></form>`;
 }
 async function loadAccountChat() {
   const ownerId=activeUser()?.id;
-  try{const result=await backend('/api/account/chat',null,'GET');if(location.hash==='#account'&&activeUser()?.id===ownerId&&$('#account-chat-content'))$('#account-chat-content').innerHTML=accountChatView(result.unlocked===true);}
+  try{const result=await backend('/api/account/chat',null,'GET');if(location.hash==='#account'&&activeUser()?.id===ownerId&&$('#account-chat-content')){$('#account-chat-content').innerHTML=accountChatView(result.unlocked===true,'',result.application);updateChatApplication(result.application);}}
   catch(error){if(location.hash==='#account'&&activeUser()?.id===ownerId&&$('#account-chat-content'))$('#account-chat-content').innerHTML=accountChatView(null,error.message);}
 }
 function accountView() {
   const fromLearn=S.section==='learn',returnTo=fromLearn?(/^#learn(?:\/[a-z-]+)*$/.test(S.learnReturn||'')?S.learnReturn:'#learn'):'#dashboard';
-  shell(`<main class="page"><div class="page-head"><div><a class="quiet-button" href="${esc(returnTo)}" style="padding:0;margin-bottom:15px">${icon('back',14)} ${fromLearn?'Go back to Learn':'My quizzes'}</a><h1>Account</h1></div></div><section class="card account-section"><h2 style="font-size:22px">Your account</h2><p>Signed in as <span class="subtle">${esc(activeUser()?.email)}</span></p><button class="btn" data-action="sign-out">${icon('logout',15)} Sign out</button><a class="btn ghost" href="${fromLearn?'#':'#learn'}">${fromLearn?'Go to Quiz':'Go to Learn'} ${icon('arrow',16)}</a></section><section class="card account-section"><h2 style="font-size:22px">Room chat</h2><div id="account-chat-content">${accountChatView()}</div></section><section class="card account-section"><h2 style="font-size:22px">Change your password</h2><form id="password-form"><div class="field"><label for="new-password">New password</label><input id="new-password" type="password" minlength="8" maxlength="128" autocomplete="new-password" required></div><button class="btn" type="submit">Update password</button></form></section><section class="card account-section"><h2 style="font-size:22px">Delete your account</h2><p>Permanently deletes your account, quizzes, images and results.</p><button class="btn danger" data-action="delete-account">Delete my account</button></section></main>`);
+  shell(`<main class="page"><div class="page-head"><div><a class="quiet-button" href="${esc(returnTo)}" style="padding:0;margin-bottom:15px">${icon('back',14)} ${fromLearn?'Go back to Learn':'My quizzes'}</a><h1>Account</h1></div></div><section class="card account-section"><h2 style="font-size:22px">Your account</h2><p>Signed in as <span class="subtle">${esc(activeUser()?.email)}</span></p><div class="account-actions"><button class="btn" data-action="sign-out">${icon('logout',15)} Sign out</button><a class="btn ghost" href="${fromLearn?'#':'#learn'}">${fromLearn?'Go to Quiz':'Go to Learn'} ${icon('arrow',16)}</a></div></section><section class="card account-section"><h2 style="font-size:22px">Room chat</h2><div id="account-chat-content">${accountChatView()}</div></section><section class="card account-section"><h2 style="font-size:22px">Change your password</h2><form id="password-form"><div class="field"><label for="new-password">New password</label><input id="new-password" type="password" minlength="8" maxlength="128" autocomplete="new-password" required></div><button class="btn" type="submit">Update password</button></form></section><section class="card account-section"><h2 style="font-size:22px">Delete your account</h2><p>Permanently deletes your account, quizzes, images and results.</p><button class="btn danger" data-action="delete-account">Delete my account</button></section><footer class="legal-footer account-legal">${policyLinks({returnTo:'#account'})}</footer></main>`);
   void loadAccountChat();
 }
 function csvFor(players,rounds=[]) {
@@ -682,6 +715,7 @@ async function copyLink() {
 const actions = {
   'close-modal':closeModal,
   'account-chat-refresh':loadAccountChat,
+  'apply-chat':applyForChat,
   'zoom-answer':zoomAnswer,
   'auth-mode':el=>{S.authMode=el.dataset.mode;S.authMessage='';authView();},
   'reload-dashboard':dashboard,
@@ -738,10 +772,28 @@ const actions = {
   'submit-slider':()=>sendAnswer(Number($('#player-slider')?.value??S.selection)),
   'submit-pin':()=>{if(S.pin)sendAnswer(S.pin);},
   'player-order':el=>moveReordered('player-order',S.order[Number(el.dataset.index)],Number(el.dataset.index)+Number(el.dataset.direction)),
-  'save-report':async()=>{await backend(`/api/rooms/${S.room.code}/report`,{});toast('Results saved.');},
+  'save-report':async()=>{await backend(`/api/rooms/${S.room.code}/report`,{detailed:false});toast('Results saved.');},
   'results-csv':()=>download(`${slug(S.roomState.title)}-results.csv`,csvFor(S.roomState.leaderboard||[],S.roomState.roundResults||[]),'text/csv;charset=utf-8'),
   'report-csv':el=>{const report=S.reports.find(r=>r.id===el.dataset.id);download(`${slug(report.quiz_title||'quiz')}-results.csv`,csvFor(report.results?.leaderboard||report.results?.players||(Array.isArray(report.results)?report.results:[]),report.results?.roundResults||[]),'text/csv;charset=utf-8');},
-  'report-view':el=>{const report=S.reports.find(r=>r.id===el.dataset.id),players=report.results?.leaderboard||report.results?.players||(Array.isArray(report.results)?report.results:[]);modal(report.quiz_title||'Quiz results',`<p>${dateLabel(report.created_at)} · Code ${esc(report.room_code)}</p><div class="report-detail">${report.results?.roundResults?.length?roundHistory(report.results.roundResults):leaderboard(players)}</div>`,`<button class="btn primary" data-action="report-csv" data-id="${report.id}">Download CSV</button>`);},
+  'report-view':el=>{const report=S.reports.find(r=>r.id===el.dataset.id);if(report.results?.questions&&report.results?.players){location.hash='#results/saved/'+report.id;return;}const players=report.results?.leaderboard||report.results?.players||(Array.isArray(report.results)?report.results:[]);modal(report.quiz_title||'Quiz results',`<p>${dateLabel(report.created_at)} · Code ${esc(report.room_code)}</p><div class="report-detail">${report.results?.roundResults?.length?roundHistory(report.results.roundResults):leaderboard(players)}</div>`,`<button class="btn primary" data-action="report-csv" data-id="${report.id}">Download CSV</button>`);},
+  'delete-report':el=>{
+    const report=S.reports.find(item=>item.id===el.dataset.id);
+    if(!report)return;
+    modal('Delete saved results?',`<p>Are you sure you want to delete the saved results for “${esc(report.quiz_title||'this quiz')}”? This can’t be undone.</p><div id="delete-report-error" role="alert"></div>`,`<button class="btn danger" data-action="confirm-delete-report" data-id="${esc(report.id)}">Delete results</button>`);
+  },
+  'confirm-delete-report':async el=>{
+    const id=el.dataset.id,owner=activeUser()?.id;
+    if(!owner||!S.reports.some(item=>item.id===id))throw new Error('Refresh your saved results and try again.');
+    await db(`giveaway_reports?id=eq.${encodeURIComponent(id)}&owner_id=eq.${encodeURIComponent(owner)}`,{method:'DELETE'});
+    if(activeUser()?.id!==owner)return;
+    S.reports=S.reports.filter(item=>item.id!==id);
+    if($('[data-action="confirm-delete-report"]')?.dataset.id===id)closeModal();
+    if(location.hash==='#dashboard'){
+      renderDashboard();
+      $('[data-action="dashboard-tab"][data-tab="reports"]')?.focus({preventScroll:true});
+    }
+    toast('Saved results deleted.');
+  },
   'sign-out':async()=>{try{await authRequest('logout',null,'POST',await getToken());}catch{}saveSession(null);S.quizzes=[];S.reports=[];S.draft=null;S.dirty=false;location.hash='#';home();toast('Signed out.');},
   'delete-account':()=>modal('Delete your account?',`<p>This permanently removes your account, every quiz, your uploaded images and all saved results. This can’t be undone.</p><div class="field"><label for="delete-confirm">Type DELETE to continue</label><input id="delete-confirm" autocomplete="off" placeholder="DELETE"></div><div id="delete-error" role="alert"></div>`,'<button class="btn danger" id="delete-account-button" data-action="confirm-delete-account" disabled>Permanently delete</button>'),
   'confirm-delete-account':async()=>{if($('#delete-confirm')?.value!=='DELETE')return;const deletedUser=activeUser()?.id;await backend('/api/account',null,'DELETE');if(deletedUser)forgetLearningAccount(deletedUser);closeModal();saveSession(null);S.draft=null;S.quizzes=[];S.reports=[];S.dirty=false;location.hash='#';home();toast('Your account and data have been deleted.');}
@@ -750,8 +802,8 @@ document.addEventListener('click',async event=>{
   if(event.target.classList.contains('modal-backdrop')){closeModal();return;}
   const el=event.target.closest('[data-action]');if(!el||el.disabled)return;if(S.chat?.handleAction(el.dataset.action,el)){event.preventDefault();return;}const action=actions[el.dataset.action];if(!action)return;event.preventDefault();
   try {const result=action(el);if(result&&typeof result.then==='function'){el.disabled=true;await result;}}
-  catch(error){toast(error.message||'Something went wrong. Please try again.',true);if(el.dataset.action==='confirm-delete-account'&&$('#delete-error'))$('#delete-error').innerHTML=`<div class="error-note">${esc(error.message)}</div>`;}
-  finally {if(el.isConnected){if(el.closest('.live-question'))refreshAnswerUI();else if(!['submit-multi','submit-pin'].includes(el.dataset.action))el.disabled=false;}}
+  catch(error){toast(error.message||'Something went wrong. Please try again.',true);if(el.dataset.action==='confirm-delete-report'&&$('#delete-report-error'))$('#delete-report-error').textContent=error.message||'Could not delete these results. Please try again.';if(el.dataset.action==='confirm-delete-account'&&$('#delete-error'))$('#delete-error').innerHTML=`<div class="error-note">${esc(error.message)}</div>`;}
+  finally {if(el.isConnected){if(el.closest('.live-question'))refreshAnswerUI();else if(el.dataset.action==='apply-chat')updateChatApplication(S.chatApplication);else if(!['submit-multi','submit-pin'].includes(el.dataset.action))el.disabled=false;}}
 });
 document.addEventListener('input',event=>{
   const el=event.target;
@@ -833,20 +885,47 @@ document.addEventListener('keydown',event=>{
 let routeVersion=0;
 async function route() {
   discardTurnstile();
-  const version=++routeVersion,raw=location.hash.slice(1),[path,...parts]=raw.split('/');
+  S.disposeResults?.();S.disposeResults=null;
+  const version=++routeVersion,raw=location.hash.slice(1),queryIndex=raw.indexOf('?');
+  const [path,...parts]=(queryIndex<0?raw:raw.slice(0,queryIndex)).split('/');
+  const policyRoute=path==='terms'||path==='privacy';
+  const returnTo=new URLSearchParams(queryIndex<0?'':raw.slice(queryIndex+1)).get('return')||'#';
   if(path==='learn'){S.section='learn';S.learnReturn=location.hash;try{sessionStorage.setItem('gather.section','learn');sessionStorage.setItem('gather.learn.route',S.learnReturn);}catch{}}
-  else if(path==='account'&&!S.section){try{S.section=sessionStorage.getItem('gather.section')||'quiz';S.learnReturn=sessionStorage.getItem('gather.learn.route')||'#learn';}catch{S.section='quiz';}}
-  else if(path!=='account'){S.section='quiz';try{sessionStorage.setItem('gather.section','quiz');}catch{}}
+  else if((path==='account'||policyRoute)&&!S.section){try{S.section=sessionStorage.getItem('gather.section')||'quiz';S.learnReturn=sessionStorage.getItem('gather.learn.route')||'#learn';}catch{S.section='quiz';}}
+  else if(path!=='account'&&!policyRoute){S.section='quiz';try{sessionStorage.setItem('gather.section','quiz');}catch{}}
   closeModal();window.scrollTo(0,0);
   if(path!=='learn'&&S.learning){S.learning.destroy();S.learning=null;}
-  if(!['learn','host','reset'].includes(path))try{sessionStorage.removeItem('gather.learn.return');}catch{}
+  if(!['learn','host','reset','terms','privacy'].includes(path))try{sessionStorage.removeItem('gather.learn.return');}catch{}
   if(path!=='room'&&(S.ws||(path==='learn'&&S.room))){disconnectRoom();S.roomState=null;if(path==='learn')S.room=null;}
+  if(policyRoute){shell(policyPage(path,icon('back',15),returnTo));document.querySelector('.legal-heading h1')?.focus({preventScroll:true});return;}
   if(path==='learn'){await showLearning(parts,version);return;}
-  if(path==='host'||path==='dashboard'||path==='account'||path==='edit'){
-    if(!activeUser()){S.authMode='login';authView();return;}
+  if(path==='host'||path==='dashboard'||path==='account'||path==='edit'||path==='results'){
+    if(!activeUser()){S.authMode=path==='host'&&parts[0]==='signup'?'signup':'login';authView();return;}
     if(path==='host'||path==='dashboard'){await dashboard();return;}
     if(path==='account'){accountView();return;}
     if(path==='edit'){await openEditor(parts[0]);return;}
+    if(path==='results'){
+      loading('Loading host results…');
+      try{
+        const [source,id]=parts;
+        const live=source==='live'&&/^\d{6}$/.test(id||'');
+        if(!live&&!(source==='saved'&&/^[a-f0-9-]{36}$/i.test(id||'')))throw new Error('Choose a result from your dashboard.');
+        const owner=activeUser()?.id;
+        const record=live?(await backend(`/api/rooms/${id}/report`,null,'GET')).report:(await db(`giveaway_reports?id=eq.${id}&owner_id=eq.${owner}&select=*`))[0];
+        if(version!==routeVersion||owner!==activeUser()?.id)return;
+        const {mountResults,hasDetails}=await import('./results.js');
+        if(version!==routeVersion)return;
+        if(!record||!hasDetails(record.results))throw new Error('This result contains a summary only. Detailed answers were not saved.');
+        const detailsSaved=!live||(await db(`giveaway_reports?id=eq.${record.id}&owner_id=eq.${owner}&results->>detailVersion=eq.1&select=id`).catch(()=>[])).length>0;
+        if(version!==routeVersion)return;
+        if(!document.querySelector('link[data-results-style]')){const link=document.createElement('link');link.rel='stylesheet';link.href=new URL('./results.css',import.meta.url);link.dataset.resultsStyle='true';document.head.append(link);}
+        shell('<div id="host-results"></div>');
+        const root=$('#host-results');
+        S.disposeResults=mountResults(root,{report:{...record.results,title:record.title||record.quiz_title||record.results.title},saved:detailsSaved,onNotice:toast,backIcon:icon('back',14),back:live?`#room/${id}`:'#dashboard',isActive:()=>version===routeVersion&&root.isConnected,
+          ...(live?{onSave:()=>backend(`/api/rooms/${id}/report`,{detailed:true,reportId:record.id})}:{})});
+      }catch(error){if(version===routeVersion)shell(`<main class="page"><h1>Results unavailable</h1><p class="muted" style="margin:20px 0">${esc(error.message)}</p><a class="btn" href="#dashboard">My quizzes</a></main>`);}
+      return;
+    }
   }
   if(path==='join'){joinView(parts[0]||'');return;}
   if(path==='room'){
@@ -887,7 +966,9 @@ async function boot() {
       const recovery=hash.get('type')==='recovery';history.replaceState(null,'',`${location.pathname}${location.search}${recovery?'#reset':learningReturn()}`);
     }
     if(S.session){try{if((S.session.expires_at||0)*1000<Date.now()+30000)await refreshToken();else scheduleRefresh();}catch{}}
+    siteNews.start();
     await route();
   }catch(error){shell(`<main class="page"><h1 style="font-size:32px">Unable to connect</h1><div class="error-note">${esc(error.message)}</div><a class="btn primary" href="#">Back home</a></main>`);}
 }
+setInterval(()=>{if(!document.hidden&&location.hash==='#account'&&S.chatApplication?.status==='pending'&&!document.activeElement?.closest('#account-chat-form'))void loadAccountChat();},20000);
 boot();

@@ -193,6 +193,7 @@ export class RoomEngine {
     this.mediaGate = null;
     this.startedAt = null;
     this.finishedAt = null;
+    this.questionTimings = {};
     this.deadline = null;
     this._answerCount = 0;
     this.createdAt = now();
@@ -224,6 +225,7 @@ export class RoomEngine {
     this.mediaGate = clone(raw.mediaGate ?? null);
     this.startedAt = raw.startedAt;
     this.finishedAt = raw.finishedAt ?? null;
+    this.questionTimings = clone(raw.questionTimings ?? {});
     this.deadline = raw.deadline;
     this.createdAt = raw.createdAt;
     this.updatedAt = raw.updatedAt;
@@ -239,7 +241,7 @@ export class RoomEngine {
     if(this.phase==='finished')this.conversation.end();
   }
   serialize({ includePlayers = true, includeConversation = true } = {}) {
-    return clone({ version: 1, code: this.code, ownerId: this.ownerId, chatUnlocked: this.chatUnlocked, quiz: this.quiz, imagePlan: this.imagePlan, mediaGate:this.mediaGate, settings: this.settings, ...(includeConversation?{conversation:this.conversation.serialize()}:{}), phase: this.phase, questionIndex: this.questionIndex, roundIndex: this.roundIndex, roundResults: this.roundResults, startedAt: this.startedAt, finishedAt: this.finishedAt, deadline: this.deadline, createdAt: this.createdAt, updatedAt: this.updatedAt, locked: this.locked, players: includePlayers ? [...this.players.values()] : [], winners: this.winners, drawnPlayerIds: [...this.drawnPlayerIds], draws: this.draws });
+    return clone({ version: 1, code: this.code, ownerId: this.ownerId, chatUnlocked: this.chatUnlocked, quiz: this.quiz, imagePlan: this.imagePlan, mediaGate:this.mediaGate, settings: this.settings, ...(includeConversation?{conversation:this.conversation.serialize()}:{}), phase: this.phase, questionIndex: this.questionIndex, roundIndex: this.roundIndex, roundResults: this.roundResults, startedAt: this.startedAt, finishedAt: this.finishedAt, questionTimings: this.questionTimings, deadline: this.deadline, createdAt: this.createdAt, updatedAt: this.updatedAt, locked: this.locked, players: includePlayers ? [...this.players.values()] : [], winners: this.winners, drawnPlayerIds: [...this.drawnPlayerIds], draws: this.draws });
   }
   _indexImages() { this._images = new Map(this.imagePlan.map(asset => [imageSource(this.quiz.questions,asset),asset])); }
   authorizeChat({enable=true}={}) {
@@ -247,6 +249,10 @@ export class RoomEngine {
     this.chatUnlocked=true;this.conversation.unlocked=true;
     if(enable&&this.conversation.config.chatMode==='off')this.conversation.config.chatMode='breaks';
     this.conversation.revision++;
+  }
+  revokeChat() {
+    this.chatUnlocked=false;this.conversation.unlocked=false;this.conversation.config.chatMode='off';
+    this.conversation.messages=[];this.conversation.revision++;
   }
   imageManifest() { return this.imagePlan.filter(asset=>!this.imageReleased(asset)).map(asset => asset.id); }
   imageReleased(asset) { return asset.question < this.questionIndex || (asset.question === this.questionIndex && this.startedAt != null && this.phase !== 'countdown' && this.phase !== 'lobby'); }
@@ -410,6 +416,7 @@ export class RoomEngine {
     this.phase = 'question';
     this.mediaGate=null;
     this.startedAt = this.now();
+    Object.defineProperty(this.questionTimings, this.question.id, {value:{openedAt:this.startedAt,closedAt:null},enumerable:true,configurable:true,writable:true});
     this.deadline = this.question.type === 'slide' ? null : this.startedAt + this.question.timeLimit * 1000;
     this._touch();
   }
@@ -491,6 +498,7 @@ export class RoomEngine {
   _reveal() {
     const q = this.question;
     if (!q) return;
+    if (Object.hasOwn(this.questionTimings,q.id)) this.questionTimings[q.id].closedAt = this.now();
     for (const player of this.players.values()) {
       const result = Object.hasOwn(player.answers, q.id) ? player.answers[q.id] : null;
       if (result && !result.awarded) { player.score += result.points; player.overallScore = (player.overallScore ?? player.score - result.points) + result.points; result.awarded = true; }
@@ -620,6 +628,14 @@ export class RoomEngine {
   /** Call only from an authenticated owner endpoint. Reports contain player answers. */
   report() {
     if (this.phase !== 'finished') fail('INVALID_PHASE', 'Finish the quiz to view its report.');
-    return clone({ code: this.code, title: this.quiz.title, createdAt: this.createdAt, finishedAt: this.finishedAt, settings: this.settings, leaderboard: this._leaderboard(), overallLeaderboard: [...this.players.values()].sort((a, b) => (b.overallScore ?? b.score) - (a.overallScore ?? a.score) || a.joinedAt - b.joinedAt).map((p, index) => ({ id: p.id, name: p.name, score: p.overallScore ?? p.score, rank: index + 1 })), roundResults: this.roundResults, winners: this.winners, draws: this.draws, questions: this.quiz.questions, players: [...this.players.values()].map(({ resumeToken, ...p }) => p) });
+    let rank = 0, previous = null;
+    const overallLeaderboard = [...this.players.values()].sort((a,b)=>(b.overallScore??b.score)-(a.overallScore??a.score)||a.joinedAt-b.joinedAt||a.id.localeCompare(b.id)).map((p,index)=>{
+      const score=p.overallScore??p.score;
+      if(score!==previous)rank=index+1;
+      previous=score;
+      return {id:p.id,name:p.name,score,rank};
+    });
+    return clone({ code: this.code, title: this.quiz.title, createdAt: this.createdAt, finishedAt: this.finishedAt, settings: this.settings, leaderboard: this._leaderboard(), overallLeaderboard, roundResults: this.roundResults, winners: this.winners, draws: this.draws, detailVersion: 1, questionTimings:this.questionTimings, questions: this.quiz.questions, players: [...this.players.values()].map(p=>({id:p.id,name:p.name,joinedAt:p.joinedAt,connected:p.connected,score:p.score,overallScore:p.overallScore??p.score,answers:p.answers})) });
+
   }
 }

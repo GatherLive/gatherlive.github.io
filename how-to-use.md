@@ -14,10 +14,10 @@ Players do not need an account. Hosts need an account.
 - Countdown timer and leaderboard.
 - Speed or accuracy scoring.
 - Single or multiple rounds with rewards.
-- Host announcements.
-- Invitation-only room chat with replies and emoji reactions.
+- Host announcements and a dismissible site news bar.
+- Room chat with access applications or invitation codes, replies and emoji reactions.
 - Save quiz sets, import/export JSON, copy an AI quiz prompt.
-- Download results as CSV.
+- Review detailed host analytics and download PDF, HTML or CSV results.
 - Rejoin open rooms, close one room, or close all rooms.
 - Learn world geography with maps, flags and capitals.
 
@@ -28,7 +28,8 @@ Players do not need an account. Hosts need an account.
 1. Open the website.
 2. Click **Host quiz**.
 3. Sign in or create an account with your email and password.
-4. After signing in, you will see **My quizzes**.
+4. By signing up, you agree to the **Terms and Conditions** and acknowledge the **Privacy Policy** linked beside the form.
+5. After signing in, you will see **My quizzes**.
 
 ---
 
@@ -146,9 +147,15 @@ Each round has its own winner and leaderboard. If players tie, the host can use 
 
 ---
 
-## 5. Chat Access Code
+## 5. Chat Access
 
-Room chat needs a **one-time 12-digit invitation code** from the site owner.
+Apply for access or use a **one-time 12-digit invitation code**.
+
+### Apply for access
+
+Open **Account → Room chat** and click **Apply for chat access** beside **Unlock chat**. The button is also available inside your room. Your signed-in email identifies the request, so there is no extra application form.
+
+**Request pending** means it is waiting for review. Approval enables chat for your account and quizzes. If declined, the page shows when you can apply again; the waiting period is seven days. Repeating an application does not create duplicate requests.
 
 ### Add the code to your account
 
@@ -224,9 +231,32 @@ Use **Remove announcement** to delete it.
 
 Host can:
 
-- **Save results** – keeps the result in **My quizzes → Results**.
+- **Save results** – keeps the leaderboard and round summary in **My quizzes → Results**.
+- **Detailed results** – opens the host-only question, participant and round analysis.
 - **CSV** – downloads the results.
 - **Random draw** – pick winners from all players, players with a correct answer, or top scorers.
+
+### Detailed results
+
+Open **Detailed results** after finishing a quiz. The overview shows accuracy,
+response rates, average response times and scores combined across every round.
+Select a pie slice to see its count and percentage. Open **Responses** and switch
+between **Questions** and **Participants**. Each question card groups the question,
+correct answer, **Answer breakdown** and **Explanation**, with participant responses
+below. Search for a participant to open their report. **Rounds** shows round points.
+
+**Save report** in Detailed results retains the full report in **My quizzes → Results**.
+The completion screen’s **Save results** retains only the summary unless you
+have already saved the details. Unsaved details expire after **15 minutes**, even
+when you save the summary.
+
+Open **Download results**, choose a quiz report or participant reports, select PDF,
+HTML or CSV, and download. **Customize** contains optional sections and details.
+PDF and HTML use Gather’s dark appearance. Participant reports contain only that
+participant’s results; ZIP downloads keep each report separate.
+
+To delete a saved report, open **My quizzes → Results**, use its delete button,
+and confirm **Delete results**.
 
 Unsaved results are deleted **15 minutes** after the quiz ends.
 Ended rooms clear after **15 minutes**. Abandoned rooms expire after **24 hours**.
@@ -244,7 +274,7 @@ From **My quizzes → Open rooms**, the host can rejoin, close one room, or clos
 5. Click **Join**.
 
 Players wait in the lobby until the host starts.
-Players can rejoin an open room from the same browser.
+Players can rejoin an open room from the same browser. **Terms and Conditions** and **Privacy Policy** are linked at the bottom of the Join quiz page.
 
 During the quiz players see the question, timer, answer choices and their score.
 After the quiz, players see the leaderboard if the host allows it.
@@ -260,7 +290,15 @@ Open **Learn** to practice world geography.
 - Flags, Maps, Capitals or All
 - Practice mode and test mode
 
-Learning progress stays in your browser unless you turn on account sync.
+Learning progress stays in your browser unless you turn on account sync. The centered controls at the bottom let you sign in or enable sync. **Sources & notes**, **Terms and Conditions** and **Privacy Policy** are beside them.
+
+---
+
+## Site News and Account
+
+When site news is available, a thin bar appears below the header. Its badge and headline link to the update. Use **×** to dismiss that publication on your device. A new publication can appear again. Removal and expiry hide the bar; connected visitors receive changes without refreshing.
+
+**Account** includes sign-out, password and account deletion controls, room chat access, and centered policy links. Opening a policy from Account keeps a Back to Account link. Account deletion also removes your chat application and synced progress. Clearing browser site data removes locally saved progress, session details and remembered dismissals.
 
 ---
 

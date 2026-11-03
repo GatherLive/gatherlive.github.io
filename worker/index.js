@@ -4,6 +4,7 @@ import {emptyLearningProgress,mergeLearningProgress,resetLearningProgress} from 
 import {RoomMedia,mediaRange} from '../shared/media.js';
 import {RoomConversation,CONVERSATION_COMMANDS} from '../shared/conversation.js';
 import {chatCodeRequest,chatOwnerKey,redeemChatCode,CHAT_ACCESS_REGISTRY} from '../shared/chat-access.js';
+import {SITE_CONTROL_REGISTRY,REQUEST_PENDING_MS,REQUEST_REVIEWED_MS,validOwnerKey,applicationInput,applicationStatus,nextApplication,announcementInput} from '../shared/site-control.js';
 import {handleApi, originAllowed, json, HttpError, responseHeaders} from '../shared/api.js';
 import {decodeMessage, authorize, safeError, allowMessage} from '../shared/protocol.js';
 const LIFETIME=24*60*60*1000;
@@ -228,7 +229,7 @@ export class GiveawayRoom extends DurableObject {
         const engine=this.engine,roomId=this.meta.reportId,authId=crypto.randomUUID();
         ws.serializeAttachment({...identity,authenticating:authId});
         let auth,accountChat=false;
-        try{auth=await authorize(engine,this.meta,this.env,message);if(auth.identity.role==='host'&&!engine.chatUnlocked)accountChat=await this.accountChatAccess(auth.identity.userId);}
+        try{auth=await authorize(engine,this.meta,this.env,message);if(auth.identity.role==='host')accountChat=await this.accountChatAccess(auth.identity.userId);}
         finally{const current=ws.deserializeAttachment();if(current?.authenticating===authId){delete current.authenticating;ws.serializeAttachment(current);}}
         this.ensure();
         await persistTransition();
@@ -236,7 +237,7 @@ export class GiveawayRoom extends DurableObject {
           if(auth.identity.playerId && this.engine===engine){engine.disconnect(auth.identity.playerId);this.savePlayer(auth.identity.playerId);}
           ws.serializeAttachment({superseded:true});try{ws.close(4008,'Join timed out.');}catch{}return;
         }
-        if(accountChat&&engine.phase!=='finished'){engine.authorizeChat({enable:false});this.checkpoint();}
+        if(auth.identity.role==='host'&&engine.phase!=='finished'&&engine.chatUnlocked!==accountChat){if(accountChat)engine.authorizeChat({enable:false});else engine.revokeChat();this.checkpoint();this.saveConversation();}
         identity={...identity,...auth.identity};ws.serializeAttachment(identity);
         if(identity.role==='host')this.hostSockets.add(ws);
         // A resumed player replaces their old connection to prevent double control.
@@ -320,7 +321,7 @@ export class GiveawayRoom extends DurableObject {
 
 // Owner index is separate from live games, used only for listing and account erasure.
 export class AccountRooms extends DurableObject {
-  constructor(ctx,env){super(ctx,env);this.ctx=ctx;this.accessEnv=env;ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS rooms(code TEXT PRIMARY KEY,expires INTEGER NOT NULL)');ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS closing(id INTEGER PRIMARY KEY,until_ms INTEGER NOT NULL)');}
+  constructor(ctx,env){super(ctx,env);this.ctx=ctx;this.accessEnv=env;ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping','pong'));ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS rooms(code TEXT PRIMARY KEY,expires INTEGER NOT NULL)');ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS closing(id INTEGER PRIMARY KEY,until_ms INTEGER NOT NULL)');}
   learning(method,progress){
     try{
       const sql=this.ctx.storage.sql;
@@ -337,6 +338,101 @@ export class AccountRooms extends DurableObject {
       });
     }catch(error){return {...rpcFailure(error),...(error.status===409&&error.progress?{progress:error.progress}:{})};}
   }
+  applicationTables(){
+    const sql=this.ctx.storage.sql;
+    sql.exec('CREATE TABLE IF NOT EXISTS chat_applications(owner_key TEXT PRIMARY KEY,user_id TEXT NOT NULL,email TEXT NOT NULL,status TEXT NOT NULL,updated INTEGER NOT NULL,data TEXT NOT NULL)');
+    sql.exec('CREATE INDEX IF NOT EXISTS chat_applications_queue ON chat_applications(status,updated)');
+    sql.exec('CREATE TABLE IF NOT EXISTS chat_erasure(owner_key TEXT PRIMARY KEY,until_ms INTEGER NOT NULL)');
+    sql.exec('DELETE FROM chat_erasure WHERE until_ms<=?',Date.now());
+    sql.exec("DELETE FROM chat_applications WHERE (status='pending' AND updated<=?) OR (status!='pending' AND updated<=?)",Date.now()-REQUEST_PENDING_MS,Date.now()-REQUEST_REVIEWED_MS);
+    return sql;
+  }
+  applicationRow(ownerKey){
+    const row=this.applicationTables().exec('SELECT data FROM chat_applications WHERE owner_key=?',ownerKey).toArray()[0];
+    return row?JSON.parse(row.data):null;
+  }
+  saveApplication(row){this.applicationTables().exec('INSERT OR REPLACE INTO chat_applications(owner_key,user_id,email,status,updated,data) VALUES(?,?,?,?,?,?)',row.ownerKey,row.userId,row.email,row.status,row.updatedAt,JSON.stringify(row));}
+  chatApplication(ownerKey){return applicationStatus(this.applicationRow(ownerKey));}
+  async applyChatApplication(input){
+    try{
+      applicationInput(input?.ownerKey,{id:input?.userId,email:input?.email});
+      const alarm=await this.ctx.storage.getAlarm();if(alarm===null||alarm>Date.now()+86400000)await this.ctx.storage.setAlarm(Date.now()+86400000);
+      return this.ctx.storage.transactionSync(()=>{
+        if(this.applicationTables().exec('SELECT owner_key FROM chat_erasure WHERE owner_key=?',input.ownerKey).toArray().length)throw new HttpError(409,'Account deletion is in progress.');
+        if(this.chatAccessStore().account(input.ownerKey))return {ok:true,unlocked:true,application:null};
+        const row=nextApplication(this.applicationRow(input.ownerKey),input);this.saveApplication(row);
+        return {ok:true,unlocked:false,application:applicationStatus(row)};
+      });
+    }catch(error){return rpcFailure(error);}
+  }
+  listChatApplications({status='pending',page=0,search=''}={}){
+    if(!['pending','approved','declined','all'].includes(status)||!Number.isInteger(page)||page<0||page>10000||typeof search!=='string'||search.length>120)throw new HttpError(400,'Choose a valid request filter.');
+    const sql=this.applicationTables(),query='%'+search.replace(/[\\%_]/g,'\\$&')+'%';
+    const filter="(?='all' OR status=?) AND email LIKE ? ESCAPE '\\'";
+    const total=sql.exec('SELECT count(*) AS count FROM chat_applications WHERE '+filter,status,status,query).toArray()[0].count;
+    const pending=sql.exec("SELECT count(*) AS count FROM chat_applications WHERE status='pending'").toArray()[0].count;
+    const rows=sql.exec('SELECT data FROM chat_applications WHERE '+filter+` ORDER BY updated ${status==='pending'?'ASC':'DESC'} LIMIT 50 OFFSET ?`,status,status,query,page*50).toArray().map(row=>JSON.parse(row.data));
+    return {requests:rows,total,pending,page};
+  }
+  setChatAccess(ownerKey,enabled){
+    if(!validOwnerKey(ownerKey)||typeof enabled!=='boolean')throw new HttpError(400,'Invalid account access.');
+    const store=this.chatAccessStore();
+    this.ctx.storage.transactionSync(()=>{
+      if(enabled)this.ctx.storage.sql.exec('INSERT OR REPLACE INTO chat_codes(digest,owner_key) VALUES(?,?)',ownerKey,ownerKey);
+      else{this.ctx.storage.sql.exec("UPDATE chat_codes SET owner_key='' WHERE owner_key=?",ownerKey);this.ctx.storage.sql.exec('DELETE FROM chat_attempts WHERE owner_key=?',ownerKey);}
+      store.saveAttempt(ownerKey,{at:Date.now(),attempts:0});
+      const row=this.applicationRow(ownerKey);
+      if(row){row.status=enabled?'approved':'declined';row.updatedAt=Date.now();this.saveApplication(row);}
+    });
+    return {unlocked:enabled};
+  }
+  reviewChatApplication(ownerKey,requestId,decision){
+    if(!validOwnerKey(ownerKey)||!['approved','declined'].includes(decision))throw new HttpError(400,'Choose approve or decline.');
+    return this.ctx.storage.transactionSync(()=>{
+      const row=this.applicationRow(ownerKey);
+      if(!row||row.id!==requestId)throw new HttpError(409,'This request has changed. Refresh the inbox.');
+      if(row.status!==decision){
+        if(row.status!=='pending')throw new HttpError(409,'This request was already reviewed.');
+        if(decision==='approved'){this.chatAccessStore();this.ctx.storage.sql.exec('INSERT OR REPLACE INTO chat_codes(digest,owner_key) VALUES(?,?)',ownerKey,ownerKey);}
+        row.status=decision;row.updatedAt=Date.now();this.saveApplication(row);
+      }
+      return {userId:row.userId,unlocked:this.chatAccessStore().account(ownerKey)};
+    });
+  }
+  eraseChatApplication(ownerKey){const sql=this.applicationTables();this.ctx.storage.transactionSync(()=>{sql.exec('DELETE FROM chat_applications WHERE owner_key=?',ownerKey);sql.exec('INSERT OR REPLACE INTO chat_erasure(owner_key,until_ms) VALUES(?,?)',ownerKey,Date.now()+120000);});}
+  siteTable(){this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS site_announcement(id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL,data TEXT)');}
+  siteSnapshot(){
+    this.siteTable();let row=this.ctx.storage.sql.exec('SELECT revision,data FROM site_announcement WHERE id=1').toArray()[0];
+    let announcement=row?.data?JSON.parse(row.data):null;
+    if(announcement?.expiresAt&&announcement.expiresAt<=Date.now()){
+      row={revision:row.revision+1};announcement=null;
+      this.ctx.storage.sql.exec('UPDATE site_announcement SET revision=?,data=NULL WHERE id=1',row.revision);
+      this.broadcastSite({revision:row.revision,announcement:null});
+    }
+    return {revision:row?.revision||0,announcement};
+  }
+  async publishSiteAnnouncement(value){
+    const input=value===null?null:announcementInput(value);
+    return this.ctx.blockConcurrencyWhile(async()=>{
+      const previous=this.siteSnapshot();
+      if(input?.expiresAt)await this.ctx.storage.setAlarm(input.expiresAt);
+      else await this.ctx.storage.deleteAlarm();
+      const state={revision:previous.revision+1,announcement:input?{...input,id:crypto.randomUUID(),publishedAt:Date.now()}:null};
+      this.ctx.storage.sql.exec('INSERT OR REPLACE INTO site_announcement(id,revision,data) VALUES(1,?,?)',state.revision,state.announcement?JSON.stringify(state.announcement):null);
+      this.broadcastSite(state);return state;
+    });
+  }
+  broadcastSite(state){
+    for(const ws of this.ctx.getWebSockets('site'))try{ws.send(JSON.stringify(state));}catch{try{ws.close(1011,'Please reconnect.');}catch{}}
+  }
+  fetch(request){
+    if(request.method!=='GET'||request.headers.get('Upgrade')?.toLowerCase()!=='websocket')return json({error:'A WebSocket connection is required.'},426);
+    const pair=new WebSocketPair();this.ctx.acceptWebSocket(pair[1],['site']);pair[1].send(JSON.stringify(this.siteSnapshot()));
+    return new Response(null,{status:101,webSocket:pair[0]});
+  }
+  webSocketMessage(ws,message){if(message==='ping'){ws.send('pong');return;}ws.close(1008,'Read-only connection.');}
+  webSocketClose(ws,code){try{ws.close(code===1006?1000:code,'');}catch{}}
+  webSocketError(ws){try{ws.close(1011,'Please reconnect.');}catch{}}
   chatAccessStore(){
       const sql=this.ctx.storage.sql;
       sql.exec('CREATE TABLE IF NOT EXISTS chat_codes(digest TEXT PRIMARY KEY,owner_key TEXT NOT NULL)');
@@ -366,7 +462,11 @@ export class AccountRooms extends DurableObject {
   redeemCode(request){
     try{
       const store=this.chatAccessStore();
-      return this.ctx.storage.transactionSync(()=>redeemChatCode(this.accessEnv,store,request));
+      return this.ctx.storage.transactionSync(()=>{
+        const result=redeemChatCode(this.accessEnv,store,request);
+        if(result.ok){const row=this.applicationRow(request.ownerKey);if(row&&row.status!=='approved'){row.status='approved';row.updatedAt=Date.now();this.saveApplication(row);}}
+        return result;
+      });
     }catch{return {ok:false,status:503,message:'Chat activation is temporarily unavailable.'};}
   }
   add(code,expires){
@@ -378,7 +478,13 @@ export class AccountRooms extends DurableObject {
   async beginDelete(){const until=Date.now()+120000;this.ctx.storage.sql.exec('INSERT OR REPLACE INTO closing(id,until_ms) VALUES(1,?)',until);await this.ctx.storage.setAlarm(until);return this.list();}
   remove(code,expires){this.ctx.storage.sql.exec('DELETE FROM rooms WHERE code=? AND expires=?',code,expires);}
   clear(){this.ctx.storage.sql.exec('DELETE FROM rooms');this.ctx.storage.sql.exec('DROP TABLE IF EXISTS learning_progress');}
-  alarm(){this.ctx.storage.sql.exec('DELETE FROM closing WHERE until_ms <= ?',Date.now());}
+  async alarm(){
+    const sql=this.ctx.storage.sql;sql.exec('DELETE FROM closing WHERE until_ms <= ?',Date.now());
+    if(sql.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='chat_applications'").toArray().length){
+      this.applicationTables();if(sql.exec('SELECT owner_key FROM chat_applications LIMIT 1').toArray().length)await this.ctx.storage.setAlarm(Date.now()+86400000);
+    }
+    if(sql.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='site_announcement'").toArray().length){const state=this.siteSnapshot();if(state.announcement?.expiresAt)await this.ctx.storage.setAlarm(state.announcement.expiresAt);}
+  }
 }
 function rpcFailure(error){
   const status=error.status || (error.name==='EngineError'?400:500);
@@ -386,6 +492,14 @@ function rpcFailure(error){
 }
 function unwrapRpc(result,key){if(!result?.ok)throw new HttpError(result?.status || 502,result?.message || 'The room service is unavailable.');return result[key];}
 function roomAdapter(env){return {
+  async announcement(){return env.ACCOUNTS.getByName(SITE_CONTROL_REGISTRY).siteSnapshot();},
+  async chatApplication(ownerId){if(!env.CHAT_CODE_PEPPER)return null;return env.ACCOUNTS.getByName(CHAT_ACCESS_REGISTRY).chatApplication(await chatOwnerKey(env,ownerId));},
+  async applyChat(user){
+    const input=applicationInput(await chatOwnerKey(env,user.id),user);
+    const result=await env.ACCOUNTS.getByName(CHAT_ACCESS_REGISTRY).applyChatApplication(input);
+    if(!result?.ok)throw new HttpError(result?.status||503,result?.message||'Chat applications are temporarily unavailable.');
+    return {unlocked:result.unlocked,application:result.application};
+  },
   async learning(ownerId,method,progress){
     const result=await env.ACCOUNTS.getByName(ownerId).learning(method,progress);
     if(!result?.ok){const error=new HttpError(result?.status||503,result?.message||'Learning sync is temporarily unavailable.');if(result?.progress)error.progress=result.progress;throw error;}
@@ -424,12 +538,13 @@ function roomAdapter(env){return {
     unwrapRpc(await env.ROOMS.getByName(code).closeRoom(ownerId,roomId,unfinishedOnly));
   },
   async report(code,ownerId){return unwrapRpc(await env.ROOMS.getByName(code).getReport(ownerId),'report');},
-  async purgeOwner(ownerId){const index=env.ACCOUNTS.getByName(ownerId);const rooms=await index.beginDelete();await Promise.all(rooms.map(r=>env.ROOMS.getByName(r.code).purge(ownerId)));if(env.CHAT_CODE_PEPPER)await env.ACCOUNTS.getByName(CHAT_ACCESS_REGISTRY).revokeChatAccess(await chatOwnerKey(env,ownerId));await index.clear();}
+  async purgeOwner(ownerId){const index=env.ACCOUNTS.getByName(ownerId);const rooms=await index.beginDelete();await Promise.all(rooms.map(r=>env.ROOMS.getByName(r.code).purge(ownerId)));if(env.CHAT_CODE_PEPPER){const key=await chatOwnerKey(env,ownerId),registry=env.ACCOUNTS.getByName(CHAT_ACCESS_REGISTRY);await registry.revokeChatAccess(key);await registry.eraseChatApplication(key);}await index.clear();}
 };}
 export default {
   async fetch(request,env,ctx){
     if(!originAllowed(request,env))return responseHeaders(request,env,json({error:'This website origin is not allowed.'},403));
     const url=new URL(request.url);
+    const isSiteSocket=url.pathname==='/api/site/updates'&&request.method==='GET';
     const isSocket=/^\/api\/rooms\/\d{6}\/ws$/.test(url.pathname) && request.method==='GET';
     const isMedia=/^\/api\/rooms\/\d{6}\/media\/[a-f0-9-]{36}(?:\/plain)?$/.test(url.pathname) && request.method==='GET';
     const cacheKey=isMedia&&!url.pathname.endsWith('/plain')?new Request(url.origin+url.pathname):null;
@@ -438,9 +553,10 @@ export default {
       const ip=request.headers.get('CF-Connecting-IP') || 'unknown';
       // Large groups on one Wi-Fi share an IP. Keep host API and guest joins separate.
       const isMediaPreflight=request.method==='OPTIONS'&&/^\/api\/rooms\/\d{6}\/media\/[a-f0-9-]{36}(?:\/plain)?$/.test(url.pathname);
-      const limiter=isSocket||isMedia||isMediaPreflight ? env.CONNECTION_LIMITER : env.API_LIMITER;
+      const limiter=isSiteSocket||url.pathname==='/api/site/announcement'||isSocket||isMedia||isMediaPreflight ? env.CONNECTION_LIMITER : env.API_LIMITER;
       if(limiter && !(await limiter.limit({key:ip})).success)return responseHeaders(request,env,json({error:'Too many requests. Please wait a minute.'},429));
     }
+    if(isSiteSocket)return env.ACCOUNTS.getByName(SITE_CONTROL_REGISTRY).fetch(request);
     if(isSocket)return env.ROOMS.getByName(url.pathname.split('/')[3]).fetch(request);
     if(isMedia){
       const response=await env.ROOMS.getByName(url.pathname.split('/')[3]).fetch(request);

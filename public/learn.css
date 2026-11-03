@@ -15,3 +15,24 @@
 .learn-mode-toolbar{display:flex;justify-content:flex-end;margin:-9px 0 18px}.learn-go-quiz{white-space:nowrap}.learn-practice-topic{width:100%;min-height:47px;font-size:15px}.learn-atlas+.learn-explore-tools{margin-top:27px}.learn-topic-heading{margin-bottom:23px}.learn-mode-toolbar .learn-select{min-height:42px}.learn-title-line h1{outline:none}@media(max-width:700px){.learn-go-quiz{font-size:11px}.learn-mode-toolbar{margin:0 0 16px}.learn-practice-topic{font-size:16px}}
 .learn-category-grid{display:grid;grid-template-columns:minmax(0,1fr);max-width:400px}.learn-category-grid .learn-topic-card{min-height:280px}.learn-category-grid+.learn-save-row{max-width:650px}@media(max-width:700px){.learn-category-grid{max-width:none}.learn-category-grid .learn-topic-card{min-height:155px}}
 @media(max-width:700px){.learn-mode-toolbar .learn-select{font-size:16px}}
+
+/* Keep supporting links and local/synced progress together at the page bottom. */
+.learn-page:not(.learn-session){display:flex;flex-direction:column;min-height:calc(100svh - 104px - var(--site-announcement-height,0px));padding-bottom:20px}
+.learn-content{width:100%;min-width:0}
+.learn-footer{display:block;width:100%;margin-top:auto;padding-top:16px;font-size:12px}
+.learn-footer .learn-save-row{max-width:none;min-height:36px;margin-top:0;padding:4px 0;font-size:12px;align-items:center;justify-content:center;gap:0 8px;text-align:center}
+.learn-footer .learn-save-row>span:first-child{flex:0 1 auto;min-width:0;max-width:none;padding-top:0}
+.learn-footer .learn-save-row>span:last-child{flex:none}
+.learn-footer .learn-save-row .quiet-button{font-size:12px;min-height:32px;padding:4px 0;color:var(--soft);text-align:center}
+.learn-footer-links{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:0 12px}
+.learn-footer-links>a,.learn-footer-links>.quiet-button{display:inline-flex;align-items:center;min-height:32px;padding:4px 0;font-size:12px;color:var(--soft)}
+.learn-footer-links>a:hover,.learn-footer-links>.quiet-button:hover{color:var(--text)}
+.learn-footer .legal-links{justify-content:center;gap:0 12px;font-size:12px}
+.learn-footer .legal-links a{min-height:32px;padding:4px 0}
+@media(max-width:700px){
+ .learn-page:not(.learn-session){min-height:calc(100svh - 83px - var(--site-announcement-height,0px));padding-bottom:16px}
+ .learn-footer{padding-top:12px}
+ .learn-footer .learn-save-row{flex-wrap:nowrap}
+ .learn-footer .learn-save-row .quiet-button{padding-right:0}
+ .learn-footer-links{gap:0 12px}
+}

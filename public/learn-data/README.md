@@ -27,3 +27,7 @@ Some countries have several capital functions or a planned relocation. Notes dis
 - [UN country profile](https://data.un.org/CountryProfile.aspx?crName=State%20of%20Palestine): Palestine designates East Jerusalem; Jerusalem's final status remains disputed.
 
 This is a reviewed snapshot, not an automatic live feed. Recheck the sources before changing capital answers or updating this pack.
+
+## Learning progress
+
+Cards, Explore, Practise and Test use this pack. Progress stays on the device unless the user enables account sync. The Learn footer groups progress and sync controls with Sources & notes and the policy links. These interface changes do not alter the source data or its attribution.
