@@ -1,7 +1,7 @@
 import http from 'node:http';
 import {readFile,writeFile,appendFile,rename,mkdir,readdir,unlink,rmdir} from 'node:fs/promises';
 import {resolve,extname,dirname,join,sep} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {WebSocketServer} from 'ws';
 import {createLocalSite} from './local-site.mjs';
 import {loadConfig} from './config.mjs';
@@ -184,7 +184,7 @@ async function nodeResponse(res,response){res.writeHead(response.status,Object.f
 let localExtension=null;
 // Optional development hooks stay in local configuration.
 if(port>0&&['127.0.0.1','localhost','::1'].includes(host)){
-  const extensionModule=new URL('../.local/dev-extension.mjs',import.meta.url);
+  const extensionModule=pathToFileURL(join(root,'.local','dev-extension.mjs'));
   let module;try{module=await import(extensionModule.href);}catch(error){if(error.code!=='ERR_MODULE_NOT_FOUND'||error.url!==extensionModule.href)throw error;}
   if(module)localExtension=await module.createDevExtension({env,stateDir,port,site,rooms,adapter,serial,persist,persistConversation,broadcast,sendConversation,roomExpires,accountChatAccess});
 }
