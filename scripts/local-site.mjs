@@ -1,8 +1,8 @@
 import {readFile,writeFile,rename} from 'node:fs/promises';
 import {join} from 'node:path';
-import {chatOwnerKey} from '../shared/chat-access.js';
-import {announcementInput,applicationInput,applicationStatus,nextApplication,applicationExpired,validOwnerKey,validAccountId} from '../shared/site-control.js';
-import {HttpError} from '../shared/api.js';
+import {chatOwnerKey} from '../shared/chat/access.js';
+import {announcementInput,applicationInput,applicationStatus,nextApplication,applicationExpired,validOwnerKey,validAccountId} from '../shared/site/control.js';
+import {HttpError} from '../shared/http/api.js';
 
 export async function createLocalSite({env,stateDir,access,waitAccess,updateAccess}){
   const file=join(stateDir,'.announcement.json'),clients=new Set();

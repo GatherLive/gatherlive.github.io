@@ -1,14 +1,37 @@
 import {readdir,readFile} from 'node:fs/promises';
+import {resolve,dirname} from 'node:path';
+import {access} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
 import assert from 'node:assert/strict';
-import {RoomEngine} from '../shared/engine.js';
-for(const directory of ['public','shared','worker','scripts']){
- for(const name of await readdir(directory)){
-  if(!/\.(?:js|mjs)$/.test(name))continue;
-  const result=spawnSync(process.execPath,['--check',`${directory}/${name}`],{stdio:'inherit'});
+import {RoomEngine} from '../shared/quiz/engine.js';
+async function checkDirectory(directory){
+ for(const entry of await readdir(directory,{withFileTypes:true})){
+  if(entry.isDirectory()){
+   if(!['vendor','node_modules','learn-data'].includes(entry.name))await checkDirectory(directory+'/'+entry.name);
+   continue;
+  }
+  if(!/\.(?:js|mjs)$/.test(entry.name))continue;
+  const result=spawnSync(process.execPath,['--check',directory+'/'+entry.name],{stdio:'inherit'});
   if(result.status)process.exit(result.status);
  }
 }
+for(const directory of ['public','shared','worker','scripts'])await checkDirectory(directory);
+async function checkReferences(directory){
+ for(const entry of await readdir(directory,{withFileTypes:true})){
+  if(['vendor','learn-data'].includes(entry.name))continue;
+  const file=directory+'/'+entry.name;
+  if(entry.isDirectory()){await checkReferences(file);continue;}
+  if(!/\.(?:js|mjs|css)$/.test(file))continue;
+  const source=await readFile(file,'utf8');
+  const expression=file.endsWith('.css')?/@import\s+(?:url\(\s*)?['"](\.{1,2}\/[^'"]+)['"]|url\(\s*['"]?(\.{1,2}\/[^)'"\s]+)/g:/(?:\bfrom\s*|\bimport\s*(?:\(\s*)?)['"](\.{1,2}\/[^'"]+)['"]|\bnew\s+URL\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*,\s*import\.meta\.url/g;
+  for(const match of source.matchAll(expression)){
+   const relative=(match[1]||match[2]).split(/[?#]/)[0];
+   if(/[${}]/.test(relative))continue;
+   try{await access(resolve(dirname(file),relative));}catch{throw new Error('Missing asset in '+file+': '+relative);}
+  }
+ }
+}
+for(const directory of ['public','shared','worker','scripts'])await checkReferences(directory);
 const html=await readFile('public/index.html','utf8');
 for(const path of ['app.js','styles.css','config.js'])if(!html.includes(path))throw new Error(`Missing frontend asset: ${path}`);
 const quiz={title:'Reconnect check',questions:['q1','q2'].map(id=>({id,type:'single',prompt:'Choose',timeLimit:30,options:[{id:'yes',text:'Yes'},{id:'no',text:'No'}],correct:['yes']}))};
@@ -40,4 +63,4 @@ const kicked=kickedRoom.addPlayer('Kicked');
 kickedRoom.command(host,{type:'kick',playerId:kicked.playerId});
 assert.throws(()=>kickedRoom.addPlayer('Kicked',kicked.playerId,kicked.resumeToken),error=>error.code==='RESUME_INVALID');
 assert.notEqual(kickedRoom.addPlayer('Kicked').playerId,kicked.playerId);
-console.log('All JavaScript syntax, entrypoint, and player reconnect checks passed.');
+console.log('All JavaScript syntax, module references, entrypoint, and player reconnect checks passed.');

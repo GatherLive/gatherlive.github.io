@@ -1,0 +1,1 @@
+export const TYPES = { single: 'Multiple choice', multi: 'Multiple answers', true_false: 'True or false', short_answer: 'Type an answer', poll: 'Poll', order: 'Put in order', slider: 'Number slider', word_cloud: 'Word cloud', open_ended: 'Open response', pin: 'Pin on image', slide: 'Information slide' };

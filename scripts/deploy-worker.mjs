@@ -2,7 +2,7 @@ import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {loadConfig,projectRoot} from './config.mjs';
-import {configuredChatCodes} from '../shared/chat-access.js';
+import {configuredChatCodes} from '../shared/chat/access.js';
 const runtime=await loadConfig();
 const template=JSON.parse(await readFile(resolve(projectRoot,'wrangler.jsonc'),'utf8'));
 for(const key of ['SUPABASE_URL','SUPABASE_PUBLISHABLE_KEY'])if(!runtime[key])throw new Error(`Set ${key} in .env before deploying.`);

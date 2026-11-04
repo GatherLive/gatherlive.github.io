@@ -5,15 +5,16 @@ import {fileURLToPath} from 'node:url';
 import {WebSocketServer} from 'ws';
 import {createLocalSite} from './local-site.mjs';
 import {loadConfig} from './config.mjs';
-import {RoomEngine} from '../shared/engine.js';
-import {emptyLearningProgress,mergeLearningProgress,resetLearningProgress} from '../shared/learning-progress.js';
-import {RoomMedia,mediaRange} from '../shared/media.js';
-import {RoomConversation,CONVERSATION_COMMANDS} from '../shared/conversation.js';
-import {chatCodeRequest,chatOwnerKey,redeemChatCode,MemoryChatCodes} from '../shared/chat-access.js';
-import {handleApi,originAllowed,json,HttpError,responseHeaders} from '../shared/api.js';
-import {decodeMessage,authorize,safeError,allowMessage,MAX_MESSAGE_BYTES} from '../shared/protocol.js';
+import {RoomEngine} from '../shared/quiz/engine.js';
+import {emptyLearningProgress,mergeLearningProgress,resetLearningProgress} from '../shared/learn/progress.js';
+import {RoomMedia,mediaRange} from '../shared/media/room-media.js';
+import {RoomConversation,CONVERSATION_COMMANDS} from '../shared/chat/conversation.js';
+import {chatCodeRequest,chatOwnerKey,redeemChatCode,MemoryChatCodes} from '../shared/chat/access.js';
+import {handleApi,originAllowed,json,HttpError,responseHeaders} from '../shared/http/api.js';
+import {decodeMessage,authorize,safeError,allowMessage,MAX_MESSAGE_BYTES} from '../shared/rooms/protocol.js';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const wrangler=JSON.parse(await readFile(join(root,'wrangler.jsonc'),'utf8'));
+const legacyAssets=JSON.parse(await readFile(join(root,'scripts/legacy-assets.json'),'utf8'));
 const env={...wrangler.vars,...await loadConfig(),LOCAL_DEV:true};
 const args=process.argv.slice(2);
 const option=(name,fallback)=>args.includes(name)?args[args.indexOf(name)+1]:fallback;
@@ -208,7 +209,13 @@ const server=http.createServer(async(req,res)=>{
   }
   if(!['GET','HEAD'].includes(req.method)){res.writeHead(405);return res.end();}
   let pathname;try{pathname=decodeURIComponent(new URL(req.url,'http://localhost').pathname);}catch{res.writeHead(400);return res.end();}
-  const publicDir=join(root,'public'),path=resolve(publicDir,`.${pathname==='/'?'/index.html':pathname}`);
+  const assetName=pathname.slice(1),legacy=Object.hasOwn(legacyAssets,assetName)?legacyAssets[assetName]:null;
+  if(legacy&&(pathname.endsWith('.js')||pathname.endsWith('.css'))){
+    const kind=pathname.endsWith('.js')?'text/javascript; charset=utf-8':'text/css; charset=utf-8';
+    const content=pathname.endsWith('.js')?`export * from './${legacy}';\n`:`@import url('./${legacy}');\n`;
+    res.writeHead(200,{'Content-Type':kind,'Cache-Control':'no-cache','X-Content-Type-Options':'nosniff'});return res.end(req.method==='HEAD'?undefined:content);
+  }
+  const publicDir=join(root,'public'),path=resolve(publicDir,`.${legacy?'/'+legacy:pathname==='/'?'/index.html':pathname}`);
   if(!path.startsWith(`${publicDir}${sep}`)){res.writeHead(403);return res.end();}
   let data;try{data=await readFile(path);}catch{res.writeHead(404);return res.end('Not found');}
   res.writeHead(200,{'Content-Type':mime[extname(path)]||'application/octet-stream','Cache-Control':'no-cache','X-Content-Type-Options':'nosniff','Content-Security-Policy':csp,'Referrer-Policy':'no-referrer','Permissions-Policy':'camera=(), microphone=(), geolocation=()'});

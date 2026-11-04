@@ -1,0 +1,15 @@
+export function createResultsTablesView(viewContext) {
+    function table(headers, rows, className = '', empty = 'No matching responses.', caption = '') {
+        const heading = header => {
+            const { label, sort } = typeof header === 'string' ? { label: header } : header, active = sort === viewContext.state.sort;
+            return `<th scope="col"${sort ? ` aria-sort="${active ? viewContext.state.sortDirection : 'none'}"` : ''}>${sort ? `<button class="report-sort" data-result="sort" data-sort="${sort}" aria-label="Sort by ${viewContext.esc(label)}">${viewContext.esc(label)}${active ? `<span aria-hidden="true">${viewContext.state.sortDirection === 'ascending' ? '↑' : '↓'}</span>` : ''}</button>` : viewContext.esc(label)}</th>`;
+        };
+        return `<div class="table-wrap"${className === 'analytics-rounds' ? ' tabindex="0" role="region" aria-label="Scores across rounds"' : ''}><table class="analytics-table ${className}">${caption ? `<caption class="sr-only">${viewContext.esc(caption)}</caption>` : ''}<thead><tr>${headers.map(heading).join('')}</tr></thead><tbody>${rows.join('') || `<tr><td colspan="${headers.length}" class="muted">${viewContext.esc(empty)}</td></tr>`}</tbody></table></div>`;
+    }
+    function pager(total, key, size = viewContext.PAGE) { const page = viewContext.state[key], last = Math.max(0, Math.ceil(total / size) - 1); return total > size ? `<div class="analytics-pager"><span class="muted">${page * size + 1}–${Math.min((page + 1) * size, total)} of ${total}</span><div class="row"><button class="btn" data-result="page" data-key="${key}" data-page="${page - 1}" ${page === 0 ? 'disabled' : ''}>Previous</button><button class="btn" data-result="page" data-key="${key}" data-page="${page + 1}" ${page >= last ? 'disabled' : ''}>Next</button></div></div>` : ''; }
+    function participantTable(rows, enhanced = false) {
+        const headers = enhanced ? [{ label: 'Participant', sort: 'name' }, { label: 'Points', sort: 'score' }, { label: 'Accuracy', sort: 'accuracy' }, { label: 'Responded', sort: 'answered' }, 'View'] : ['Participant', 'Points', 'Accuracy', 'Responded', 'View'];
+        return table(headers, rows.map(p => `<tr><td>${enhanced ? `<button class="participant-name" data-result="student" data-id="${viewContext.esc(p.player.id)}">${viewContext.esc(p.player.name)}</button>` : viewContext.esc(p.player.name)}<span class="participant-row-meta">Answered ${p.answered} / ${p.eligible}</span></td><td class="numeric">${viewContext.fmt(p.score)}</td><td class="numeric">${viewContext.rate(p.accuracy)}</td><td class="numeric">${p.answered} / ${p.eligible}</td><td><button class="quiet-button" data-result="student" data-id="${viewContext.esc(p.player.id)}" aria-label="View ${viewContext.esc(p.player.name)} report"><span class="analytics-view-label">View</span>${viewContext.icon('next', 16)}</button></td></tr>`), 'analytics-participants' + (enhanced ? ' enhanced-participants' : ''), viewContext.data.players.length ? 'No participants match your search.' : 'No participants in this report.', 'Participant results');
+    }
+    return { table, pager, participantTable };
+}

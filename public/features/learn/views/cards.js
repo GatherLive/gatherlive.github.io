@@ -1,0 +1,11 @@
+export function createLearnCardsView(viewContext) {
+    function cardsContent(pool) {
+        viewContext.ensureCards(pool);
+        const country = viewContext.countryByCode.get(viewContext.cardCodes[viewContext.cardIndex]);
+        if (!country)
+            return '<p class="learn-empty">No countries in this region.</p>';
+        return `<section class="learn-flashcard"><div class="learn-flashcard-top"><span>${viewContext.esc(country.region)}</span><span class="learn-card-progress">${viewContext.cardIndex + 1} / ${viewContext.cardCodes.length}</span></div><div class="learn-flashcard-country">${viewContext.flag(country)}<h2>${viewContext.esc(country.name)}</h2><dl><div><dt>${viewContext.esc(viewContext.capitalFactLabel(country))}</dt><dd>${viewContext.esc(viewContext.capitalLabel(country))}</dd></div></dl></div>${viewContext.mapMarkup(country, true, { kind: 'card' })}${country.capitalNote ? `<p class="learn-flashcard-note">${viewContext.esc(country.capitalNote)}</p>` : ''}${country.flagNote ? `<p class="learn-flashcard-note">${viewContext.esc(country.flagNote)}</p>` : ''}<div class="learn-card-controls"><button class="btn ghost" data-learn-action="card-prev"${viewContext.cardIndex === 0 ? ' disabled' : ''}>${viewContext.icon?.('back', 16) || '←'} Previous</button><button class="btn primary" data-learn-action="card-next"${viewContext.cardIndex + 1 >= viewContext.cardCodes.length ? ' disabled' : ''}>Next ${viewContext.icon?.('arrow', 16) || '→'}</button></div></section><div class="learn-card-tools"><button class="quiet-button" data-learn-action="card-shuffle">${viewContext.icon?.('shuffle', 15) || ''} Shuffle</button>${viewContext.cardsShuffled ? '<button class="quiet-button" data-learn-action="card-order">In order</button>' : ''}</div>`;
+    }
+    function atlasCaption(country) { return country ? `${viewContext.flag(country)}<div><h2>${viewContext.esc(country.name)}</h2><p>${viewContext.esc(viewContext.capitalLabel(country))}</p></div><button class="quiet-button" data-learn-action="country" data-code="${country.code}">Details ${viewContext.icon?.('arrow', 15) || '↗'}</button>` : '<div><h2>World map</h2><p>Select a country to explore.</p></div>'; }
+    return { cardsContent, atlasCaption };
+}

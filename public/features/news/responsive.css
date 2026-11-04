@@ -1,0 +1,26 @@
+@media(min-width:701px) {
+  .site-news-inner {
+    padding-right: 36px;
+  }
+}
+@media(max-width:1000px) {
+  .site-news-inner {
+    padding-left: 30px;
+    padding-right: 18px;
+  }
+}
+@media(max-width:700px) {
+  .site-news-inner {
+    padding-left: 22px;
+    padding-right: 10px;
+  }
+  .site-news-link {
+    gap: 10px;
+  }
+}
+@media(max-width:400px) {
+  .site-news-inner {
+    padding-left: 17px;
+    padding-right: 5px;
+  }
+}
