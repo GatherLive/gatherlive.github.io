@@ -14,7 +14,7 @@ export function createFeaturesEditorActions(context) {
     const ensureRounds = (...args) => context.ensureRounds(...args);
     const syncRoundOrder = (...args) => context.syncRoundOrder(...args);
     return { actions: {
-            'new-quiz': () => { S.draft = blankQuiz(); S.questionIndex = 0; S.dirty = true; location.hash = `#edit/${S.draft.id}`; renderEditor(); setTimeout(() => { const details = $('.editor-settings'); if (details)
+            'new-quiz': () => { S.draft = blankQuiz(); S.questionIndex = 0; S.dirty = true; location.hash = `#edit/${S.draft.id}`; renderEditor(); setTimeout(() => { const details = $('.editor-quiz-details'); if (details)
                 details.open = true; $('#quiz-title')?.focus(); $('#quiz-title')?.select(); }, 20); },
             'copy-ai-prompt': copyAIPrompt,
             'save-quiz': () => saveQuiz(),

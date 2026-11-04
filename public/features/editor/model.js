@@ -83,7 +83,7 @@ export function createFeaturesEditorModel(context) {
         }
         if (!Number.isInteger(d.settings.questionDelay) || d.settings.questionDelay < 0 || d.settings.questionDelay > 30)
             throw new Error('Choose a countdown from 0 to 30 seconds.');
-        if (!CHAT_OPTIONS.some(([mode]) => mode === d.settings.chatMode) || ['chatReplies', 'chatReactions'].some(key => typeof d.settings[key] !== 'boolean'))
+        if (!CHAT_OPTIONS.some(([mode]) => mode === d.settings.chatMode) || ['chatReplies', 'chatReactions', 'chatMentions'].some(key => typeof d.settings[key] !== 'boolean'))
             throw new Error('Choose valid room chat settings.');
         if (d.settings.roundsEnabled) {
             if (!Array.isArray(d.settings.rounds) || !d.settings.rounds.length)
