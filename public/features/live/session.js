@@ -5,9 +5,9 @@ export function createFeaturesLiveSession(context) {
     function playerRoomKey(code) { return `gather.player.${code}`; }
     function playerNameKey(code, name) { return `${playerRoomKey(code)}.${encodeURIComponent(JSON.stringify(normalizePlayerName(name)))}`; }
     function savedPlayer(code, name) {
-        for (const [storage, key] of [[localStorage, playerNameKey(code, name)], [localStorage, playerRoomKey(code)], [sessionStorage, playerRoomKey(code)]])
+        for (const [storageName, key] of [['localStorage', playerNameKey(code, name)], ['localStorage', playerRoomKey(code)], ['sessionStorage', playerRoomKey(code)]])
             try {
-                const player = JSON.parse(storage.getItem(key) || 'null');
+                const player = JSON.parse(globalThis[storageName].getItem(key) || 'null');
                 if (player?.name && normalizePlayerName(player.name) === normalizePlayerName(name))
                     return player;
             }
@@ -16,8 +16,9 @@ export function createFeaturesLiveSession(context) {
     }
     function forgetPlayer(room, clearAnswers = false) {
         const matches = player => player && ((room.playerId && player.playerId === room.playerId) || (room.resumeToken && player.resumeToken === room.resumeToken));
-        for (const storage of [localStorage, sessionStorage])
+        for (const storageName of ['localStorage', 'sessionStorage'])
             try {
+                const storage = globalThis[storageName];
                 for (const key of [playerNameKey(room.code, room.name), playerRoomKey(room.code)])
                     if (matches(JSON.parse(storage.getItem(key) || 'null')))
                         storage.removeItem(key);

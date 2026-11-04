@@ -1,5 +1,7 @@
+import {announcementCountdown} from './announcements.js';
+import {mentionMembers,messageMentions} from './mentions.js';
 // Room-only text conversation. Never part of quiz scoring or saved reports.
-export const CONVERSATION_COMMANDS = new Set(['chat_send','chat_react','chat_delete','chat_clear','chat_settings','chat_unlock','announce']);
+export const CONVERSATION_COMMANDS = new Set(['chat_members','chat_send','chat_react','chat_delete','chat_clear','chat_settings','chat_unlock','announce']);
 export const CHAT_MODES = new Set(['off','lobby','breaks','rounds']);
 export const REACTIONS = ['👍','❤️','😂','🎉','👏','😮'];
 const fail = (message) => { const error = new Error(message); error.name = 'EngineError'; throw error; };
@@ -11,8 +13,8 @@ const text = (value, max) => {
 export function chatSettings(raw = {}) {
   const chatMode=raw.chatMode??'off';
   if(!CHAT_MODES.has(chatMode))fail('Choose a valid chat setting.');
-  for(const key of ['chatReplies','chatReactions'])if(raw[key]!=null&&typeof raw[key]!=='boolean')fail('Chat options must be true or false.');
-  return {chatMode,chatReplies:raw.chatReplies??true,chatReactions:raw.chatReactions??true};
+  for(const key of ['chatReplies','chatReactions','chatMentions'])if(raw[key]!=null&&typeof raw[key]!=='boolean')fail('Chat options must be true or false.');
+  return {chatMode,chatReplies:raw.chatReplies??true,chatReactions:raw.chatReactions??true,chatMentions:raw.chatMentions??false};
 }
 export class RoomConversation {
   constructor(settings = {}, saved = null, {unlocked=false}={}) {
@@ -64,10 +66,16 @@ export class RoomConversation {
     if(phase==='finished')fail('This quiz has ended. Chat has been cleared.');
     let event;
     if(['chat_send','chat_react'].includes(message.type)&&!this.metadata(phase).open)fail('Chat is closed for this part of the quiz.');
+    if(message.type==='chat_members'){
+      if(identity.chatSubscribed===false||!this.metadata(phase).open)fail('Chat is closed for this part of the quiz.');
+      if(!host&&!this.config.chatMentions)fail('Participant mentions are turned off.');
+      return {channel:'conversation',type:'chat_ack',requestId,members:mentionMembers(message.query??'',players,actor)};
+    }
     if(message.type==='chat_send'){
       const duplicate=this.messages.find(item=>item.senderId===actor.id&&item.requestId===requestId);
       if(duplicate)return {channel:'conversation',type:'chat_ack',requestId,messageId:duplicate.id};
       const body=text(message.text,400);
+      const mentions=messageMentions(message.mentions,body,{host,enabled:this.config.chatMentions,players});
       let replyTo=null;
       if(message.replyTo!=null){
         if(!this.config.chatReplies)fail('Replies are turned off.');
@@ -76,7 +84,7 @@ export class RoomConversation {
         replyTo=parent.id;
       }
       this.rate(actor,message.type,now);
-      const item={id:crypto.randomUUID(),senderId:actor.id,senderName:actor.name,role:actor.role,text:body,replyTo,at:now,requestId,reactions:{}};
+      const item={id:crypto.randomUUID(),senderId:actor.id,senderName:actor.name,role:actor.role,text:body,mentions,replyTo,at:now,requestId,reactions:{}};
       this.messages.push(item);if(this.messages.length>60)this.messages.shift();
       event={type:'chat_message',message:this.publicMessage(item,null)};
     }else if(message.type==='chat_react'){
@@ -95,8 +103,9 @@ export class RoomConversation {
       if(message.type==='announce'){
         if(['countdown','question'].includes(phase))fail('Send announcements between questions.');
         const body=message.text===''?'':text(message.text,240);
+        const countdown=body?announcementCountdown(body,now):null;
         this.rate(actor,'announce',now);
-        this.announcement=body?{id:crypto.randomUUID(),text:body,at:now}:null;
+        this.announcement=body?{id:crypto.randomUUID(),text:body,at:now,...(countdown?{countdown}:{})}:null;
         event={type:'announcement',announcement:copy(this.announcement)};
       }else if(message.type==='chat_settings'){
         const config=chatSettings(message.settings);
@@ -106,7 +115,7 @@ export class RoomConversation {
       }else if(message.type==='chat_delete'){
         const item=this.messages.find(item=>item.id===message.messageId);
         if(!item)fail('That message is no longer available.');
-        Object.assign(item,{text:'',replyTo:null,reactions:{},deleted:true});
+        Object.assign(item,{text:'',mentions:[],replyTo:null,reactions:{},deleted:true});
         event={type:'chat_deleted',messageId:item.id};
       }else if(message.type==='chat_clear'){
         this.messages=[];event={type:'chat_cleared'};

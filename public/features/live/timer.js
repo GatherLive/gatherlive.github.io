@@ -2,6 +2,7 @@ import { $ } from '../../core/dom.js';
 export function createFeaturesLiveTimer(context) {
     const S = context.state;
     function updateTimer() {
+        if (!document.hidden) S.chat?.tick(S.clock?.now() ?? Date.now());
         const st = S.roomState;
         if (!st)
             return;

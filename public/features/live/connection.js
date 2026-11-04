@@ -26,7 +26,7 @@ export function createFeaturesLiveConnection(context) {
         const quiz = S.quizzes.find(q => q.id === quizId) || S.draft;
         const result = await backend('/api/rooms', { quizId, settings: { ...defaultSettings(), ...(quiz?.settings || {}), ...(settings || {}) } });
         S.room = { code: result.code, role: 'host' };
-        sessionStorage.setItem(`gather.host.${result.code}`, '1');
+        try { sessionStorage.setItem(`gather.host.${result.code}`, '1'); } catch { }
         location.hash = `#room/${result.code}`;
         connectRoom();
     }
@@ -54,6 +54,7 @@ export function createFeaturesLiveConnection(context) {
         if (!room)
             return;
         disconnectRoom();
+        S.fatalRoomError = null;
         S.clock = new RoomClock();
         S.chat = new RoomChat({ state: () => S, accessStatus: async () => { const owner = activeUser()?.id; const result = await backend('/api/account/chat', null, 'GET'); if (activeUser()?.id === owner)
                 updateChatApplication(result.application); return result; }, send, notify: toast, modal, closeModal, id: uid, icon });
@@ -93,6 +94,16 @@ export function createFeaturesLiveConnection(context) {
                 token = await getToken();
         }
         catch (error) {
+            if (generation !== S.wsGeneration || S.room !== room) return;
+            if (navigator.onLine === false || error instanceof TypeError || [408, 429].includes(error.status) || error.status >= 500) {
+                S.connectionStatus = navigator.onLine === false ? 'offline' : 'reconnecting';
+                updateConnection();
+                if (navigator.onLine !== false) {
+                    const delay = Math.min(700 * 2 ** S.retries++, 5000) + Math.random() * 250;
+                    S.reconnectTimer = setTimeout(openSocket, delay);
+                }
+                return;
+            }
             toast(error.message, true);
             location.hash = '#host';
             return;
@@ -189,6 +200,7 @@ export function createFeaturesLiveConnection(context) {
                 S.retries = 0;
                 S.roomState = data.state;
                 S.chat?.setState(data.state);
+                if (initialState) S.clock.reset();
                 S.clock.observe(data.state.serverNow);
                 S.images?.release(data.state.imageKeys);
                 S.images?.pause(data.state.phase === 'question' || data.state.phase === 'finished');
@@ -210,20 +222,14 @@ export function createFeaturesLiveConnection(context) {
                     S.answerSent = false;
                     S.answerPending = false;
                 }
-                if (data.state.me?.answered) {
-                    S.answerSent = true;
-                    S.answerPending = false;
-                    S.selection = data.state.me.answer ?? S.selection;
-                }
-                else if (newId && room.role === 'player') {
-                    try {
-                        const saved = JSON.parse(sessionStorage.getItem(`gather.answer.${room.code}.${newId}`) || 'null');
-                        if (saved) {
-                            S.answerSent = true;
-                            S.selection = saved.answer;
-                        }
+                // The server restores this participant's answer; browser caches
+                // can belong to another name or an earlier room using this code.
+                if (data.state.me) {
+                    S.answerSent = data.state.me.answered === true;
+                    if (S.answerSent) {
+                        S.answerPending = false;
+                        S.selection = data.state.me.answer ?? S.selection;
                     }
-                    catch { }
                 }
                 if (data.state.question?.type === 'order' && Array.isArray(S.selection))
                     S.order = [...S.selection];
@@ -255,10 +261,11 @@ export function createFeaturesLiveConnection(context) {
                 }
             }
             else if (data.type === 'answer_ack') {
+                if (data.questionId !== S.roomState?.question?.id)
+                    return;
                 S.answerPending = false;
                 if (data.accepted || data.answered) {
                     S.answerSent = true;
-                    sessionStorage.setItem(`gather.answer.${room.code}.${data.questionId}`, JSON.stringify({ answer: S.selection }));
                     refreshAnswerUI();
                 }
                 else {

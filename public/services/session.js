@@ -11,10 +11,10 @@ export function createServicesSession(context) {
     function saveSession(session) {
         const previousUser = S.session?.user?.id || S.session?.id || '';
         S.session = session;
-        if (session)
-            localStorage.setItem('gather.session', JSON.stringify(session));
-        else
-            localStorage.removeItem('gather.session');
+        try {
+            if (session) localStorage.setItem('gather.session', JSON.stringify(session));
+            else localStorage.removeItem('gather.session');
+        } catch { }
         scheduleRefresh();
         if (previousUser !== (S.session?.user?.id || S.session?.id || '') && S.learning) {
             const learning = S.learning;

@@ -125,7 +125,9 @@ export function createAppRouter(context) {
                         player = JSON.parse(localStorage.getItem(playerRoomKey(code)) || 'null');
                     }
                     catch { }
-                if (sessionStorage.getItem(`gather.host.${code}`) && activeUser())
+                let hosting = false;
+                try { hosting = !!sessionStorage.getItem(`gather.host.${code}`); } catch { }
+                if (hosting && activeUser())
                     S.room = { code, role: 'host' };
                 else if (player)
                     S.room = player;

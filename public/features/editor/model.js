@@ -4,7 +4,7 @@ import { CHAT_OPTIONS } from '../chat/room-chat.js';
 export function createFeaturesEditorModel(context) {
     const S = context.state;
     const activeUser = (...args) => context.activeUser(...args);
-    function defaultSettings() { return { shuffleQuestions: false, shuffleOptions: false, shuffleTrueFalse: false, scoring: 'accuracy', allowLateJoin: true, showLeaderboard: true, participantLimit: 0, questionDelay: 3, showQuestionType: false, showAnswerOptions: true, roundsEnabled: false, rounds: [], chatMode: 'off', chatReplies: true, chatReactions: true }; }
+    function defaultSettings() { return { shuffleQuestions: false, shuffleOptions: false, shuffleTrueFalse: false, scoring: 'accuracy', allowLateJoin: true, showLeaderboard: true, participantLimit: 0, questionDelay: 3, showQuestionType: false, showAnswerOptions: true, roundsEnabled: false, rounds: [], chatMode: 'off', chatReplies: true, chatReactions: true, chatMentions: false }; }
     function questionRound(id, d = S.draft) { return (d.settings.rounds || []).find(r => r.questionIds.includes(id)); }
     function ensureRounds(d = S.draft) {
         if (!Array.isArray(d.settings.rounds))

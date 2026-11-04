@@ -8,7 +8,7 @@ export function createFeaturesEditorPage(context) {
     const shell = (...args) => context.shell(...args);
     const questionRound = (...args) => context.questionRound(...args);
     function chatSettingsEditor(d) {
-        return `<div class="editor-chat-settings"><div class="field"><label for="quiz-chat-mode">Room chat</label><select id="quiz-chat-mode" data-sfield="chatMode">${CHAT_OPTIONS.map(([value, label]) => `<option value="${value}" ${d.settings.chatMode === value ? 'selected' : ''}>${label}</option>`).join('')}</select><span class="hint">Requires a one-time host code. Closed during questions.</span></div><div class="row wrap">${[['chatReplies', 'Replies'], ['chatReactions', 'Emoji reactions']].map(([key, label]) => `<label class="checkbox-row"><input type="checkbox" data-sfield="${key}" ${d.settings[key] ? 'checked' : ''}>${label}</label>`).join('')}</div></div>`;
+        return `<div class="editor-chat-settings"><div class="field"><label for="quiz-chat-mode">Room chat</label><select id="quiz-chat-mode" data-sfield="chatMode">${CHAT_OPTIONS.map(([value, label]) => `<option value="${value}" ${d.settings.chatMode === value ? 'selected' : ''}>${label}</option>`).join('')}</select><span class="hint">Requires a one-time host code. Closed during questions.</span></div><div class="row wrap">${[['chatReplies', 'Replies'], ['chatReactions', 'Emoji reactions'], ['chatMentions', 'Participant mentions']].map(([key, label]) => `<label class="checkbox-row"><input type="checkbox" data-sfield="${key}" ${d.settings[key] ? 'checked' : ''}>${label}</label>`).join('')}</div></div>`;
     }
     function roundsEditor(d) {
         if (!d.settings.roundsEnabled)

@@ -9,7 +9,7 @@ export function createFeaturesJoinForms(context) {
                         throw new Error('Enter a six digit code and your name.');
                     const previous = savedPlayer(code, name);
                     S.room = { ...previous, code, role: 'player', name };
-                    localStorage.setItem('gather.name', name);
+                    try { localStorage.setItem('gather.name', name); } catch { }
                     S.fatalRoomError = null;
                     location.hash = `#room/${code}`;
                     connectRoom();

@@ -1,0 +1,121 @@
+/* New chat affordances use the existing room palette and type. */
+.announcement-countdown {
+  display: inline-block;
+  min-width: 4ch;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.announcement-countdown.is-finished { color: var(--soft); }
+/* An inline unread count stays aligned with the chat label. */
+.chat-mention-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--red);
+  color: #38211e;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.chat-message.is-mentioned {
+  background: #303033;
+}
+.chat-mention {
+  border-radius: 4px;
+  padding: 1px 4px;
+  background: #ffffff0d;
+  color: inherit;
+  font-weight: 600;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+/* Only the addressed viewer sees the accent on their mention. */
+.chat-mention.is-targeted {
+  background: #d2c6f31a;
+  color: var(--accent);
+}
+/* Own messages have a light bubble, so their mentions use its dark ink. */
+.chat-message.own .chat-mention {
+  background: #2922331a;
+  color: inherit;
+}
+.chat-composer { position: relative; }
+.chat-mention-slot:empty { display: none; }
+.chat-mention-picker {
+  position: absolute;
+  z-index: 2;
+  inset-inline: 12px;
+  bottom: calc(100% - 4px);
+  padding: 10px 6px 6px;
+  background: #242424;
+  border: 1px solid #383838;
+  border-radius: 14px;
+  box-shadow: 0 -8px 24px #0003;
+  overflow: hidden;
+}
+.chat-mention-heading {
+  margin: 0 8px 6px;
+  color: var(--soft);
+  font-size: 12px;
+  font-weight: 500;
+}
+.chat-mention-list {
+  max-height: max(88px, min(240px, calc(var(--chat-visible-height, 100dvh) - 200px)));
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.chat-mention-list button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: start;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.chat-mention-list button[aria-selected="true"],
+.chat-mention-list button:hover { background: #353535; }
+.chat-mention-list button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.chat-mention-initial {
+  flex: 0 0 28px;
+  display: grid;
+  place-items: center;
+  height: 28px;
+  border-radius: 50%;
+  background: #ffffff0a;
+  color: var(--soft);
+  font-size: 13px;
+}
+.chat-mention-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-mention-scope { flex: none; color: var(--soft); font-size: 12px; }
+.chat-mention-status { padding: 8px; color: var(--soft); font-size: 13px; }
+.chat-mention-status[hidden] { display: none; }
+.chat-mention-status .quiet-button { padding: 4px 8px; }
+@media (prefers-reduced-motion: no-preference) {
+  .chat-mention-picker { animation: chat-mention-enter 160ms cubic-bezier(.2, .8, .2, 1) both; }
+  .chat-panel { animation: chat-panel-enter 180ms cubic-bezier(.2, .8, .2, 1) both; }
+  .chat-mention-list button { transition: background-color 100ms ease; }
+  @keyframes chat-mention-enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes chat-panel-enter { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: translateX(0); } }
+  @media (max-width: 700px) {
+    @keyframes chat-panel-enter { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+  }
+}
+
+/* Grouped messages have no sender row to make room for their actions. */
+.chat-message.grouped:has(.chat-more) .chat-text { padding-inline-end: 20px; }

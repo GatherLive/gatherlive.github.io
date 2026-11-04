@@ -3,6 +3,8 @@ export class RoomClock {
   constructor({now=()=>performance.now(),epoch=Date.now()}={}) {
     this.read=now;this.origin=now();this.epoch=epoch;this.offset=0;this.synced=false;this.samples=[];this.pending=new Map();this.sequence=0;
   }
+  // A new connection needs fresh latency samples; keep the last useful display offset.
+  reset() {this.samples=[];this.pending.clear();this.synced=false;}
   local() {return this.epoch+this.read()-this.origin;}
   now() {return this.local()+this.offset;}
   observe(serverNow) {if(!this.synced&&Number.isFinite(serverNow))this.offset=serverNow-this.local();}
