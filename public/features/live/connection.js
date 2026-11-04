@@ -55,6 +55,7 @@ export function createFeaturesLiveConnection(context) {
             return;
         disconnectRoom();
         S.fatalRoomError = null;
+        S.roomUnavailable = false;
         S.clock = new RoomClock();
         S.chat = new RoomChat({ state: () => S, accessStatus: async () => { const owner = activeUser()?.id; const result = await backend('/api/account/chat', null, 'GET'); if (activeUser()?.id === owner)
                 updateChatApplication(result.application); return result; }, send, notify: toast, modal, closeModal, id: uid, icon });
@@ -67,6 +68,14 @@ export function createFeaturesLiveConnection(context) {
         S.retries = 0;
         renderRoom();
         openSocket();
+    }
+    function failJoin(ws, generation, unavailable = false) {
+        if (generation !== S.wsGeneration) return;
+        clearTimeout(S.connectTimeout);clearTimeout(S.reconnectTimer);clearInterval(S.heartbeat);
+        S.roomUnavailable = unavailable;
+        S.fatalRoomError = unavailable ? 'Check the code or ask the host for a new one.' : 'Could not connect. Check your connection and try again.';
+        S.connected = false;S.connectionStatus = 'disconnected';S.wsGeneration++;
+        ws.onclose = null;ws.close();renderRoom();
     }
     async function openSocket() {
         const room = S.room, generation = ++S.wsGeneration;
@@ -124,7 +133,8 @@ export function createFeaturesLiveConnection(context) {
         S.ws = ws;
         const syncClock = () => { if (generation === S.wsGeneration && S.connected && ws.readyState === WebSocket.OPEN)
             ws.send(JSON.stringify(S.clock.request())); };
-        S.connectTimeout = setTimeout(() => { if (generation === S.wsGeneration && ws.readyState < 2) {
+        S.connectTimeout = setTimeout(() => { if (generation === S.wsGeneration && !S.connected && ws.readyState < 2) {
+            if (!S.roomState) { failJoin(ws,generation);return; }
             S.retries++;
             void openSocket();
         } }, 12000);
@@ -181,12 +191,12 @@ export function createFeaturesLiveConnection(context) {
                     catch { }
                 }
                 S.images?.prepare(data.imageManifest);
-                clearTimeout(S.connectTimeout);
             }
             else if (S.chat?.receive(data)) {
                 return;
             }
             else if (data.type === 'state') {
+                clearTimeout(S.connectTimeout);
                 const initialState = firstState;
                 if (firstState) {
                     S.answerPending = false;
@@ -317,7 +327,7 @@ export function createFeaturesLiveConnection(context) {
                     updateTimer();
             }
         };
-        ws.onclose = event => {
+        ws.onclose = async event => {
             if (generation !== S.wsGeneration)
                 return;
             clearInterval(S.heartbeat);
@@ -332,6 +342,15 @@ export function createFeaturesLiveConnection(context) {
                 return;
             }
             if (navigator.onLine !== false) {
+                if (firstState) {
+                    try {
+                        const response=await fetch(apiURL(`/api/rooms/${room.code}`),{cache:'no-store',signal:AbortSignal.timeout(6000)});
+                        if (generation !== S.wsGeneration) return;
+                        if (response.status === 404) {failJoin(ws,generation,true);return;}
+                    } catch { }
+                    if (generation !== S.wsGeneration) return;
+                    if (!S.roomState && S.retries >= 2) {failJoin(ws,generation);return;}
+                }
                 const delay = Math.min(700 * 2 ** S.retries++, 5000) + Math.random() * 250;
                 S.reconnectTimer = setTimeout(openSocket, delay);
             }

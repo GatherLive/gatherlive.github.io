@@ -115,6 +115,9 @@ export async function handleApi(request, env, rooms) {
         for(const result of results)if(result.status==='fulfilled')closed++;else failed++;
       }
       response=json({closed,failed});
+    } else if (/^\/api\/rooms\/\d{6}$/.test(pathname) && request.method === 'GET') {
+      const available=await rooms.available(pathname.split('/')[3]);
+      response=available?json({available:true}):json({error:'Room is not available.'},404);
     } else if (/^\/api\/rooms\/\d{6}$/.test(pathname) && request.method === 'DELETE') {
       const user=await authenticate(env,bearer(request)),code=pathname.split('/')[3],body=await readJson(request,1024);
       if(typeof body?.roomId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(body.roomId))throw new HttpError(400,'Refresh your rooms before closing one.');

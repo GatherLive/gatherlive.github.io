@@ -1,8 +1,8 @@
 # How to Use Gather (Live Quizzes)
 
 Gather is a free live quiz website.
-Hosts create quizzes. Players join with a **6-digit code** and a name.
-Players do not need an account. Hosts need an account.
+Hosts create quizzes. Participants join with a **6-digit code** and a name.
+Participants do not need an account. Hosts need an account.
 
 ---
 
@@ -14,8 +14,9 @@ Players do not need an account. Hosts need an account.
 - Countdown timer and leaderboard.
 - Speed or accuracy scoring.
 - Single or multiple rounds with rewards.
-- Host announcements and a dismissible site news bar.
-- Room chat with access applications or invitation codes, replies and emoji reactions.
+- Live host announcements with optional 1–60 minute countdowns.
+- A dismissible site news bar.
+- Room chat with access applications or invitation codes, replies, emoji reactions and optional participant mentions.
 - Save quiz sets, import/export JSON, copy an AI quiz prompt.
 - Review detailed host analytics and download PDF, HTML or CSV results.
 - Rejoin open rooms, close one room, or close all rooms.
@@ -37,21 +38,19 @@ Players do not need an account. Hosts need an account.
 
 1. Click **New quiz**.
 2. The quiz editor opens.
-3. Click **Quiz details & game settings** to open the settings.
-4. Fill in:
-   - **Title** – quiz name.
-   - **Collection** – optional group name, like "Science" or "Fun".
-   - **Description** – optional short note.
-   - **Player limit** – `0` means unlimited players.
-5. Click **Add question** to add questions.
-6. Click **Save** when done.
+3. Open **Quiz details** for the title, optional collection and description.
+4. Open **Game settings** for scoring, participant limits, countdowns, shuffling, rounds and room chat.
+5. Use the question editor below both sections to write questions.
+6. Click **Add question** for more, then **Save**.
+
+Each section has its own expand/collapse control. Opening one does not close the other, and the editor keeps your choice while you work.
 
 Tips:
 
 - **Sample quiz** loads an example quiz you can edit.
 - **Import quiz** loads a quiz from a JSON file.
 - **Export** downloads your quiz as a JSON file.
-- **Copy AI prompt** copies a ready prompt you can paste into an AI tool to make quiz JSON.
+- **Copy AI prompt** copies instructions for an AI tool. It asks up to three short questions when needed, then creates a Gather JSON file. The prompt includes all question types, rounds, current game settings and chat options. Import the downloaded file with **Import quiz**. Participant mention preferences are preserved.
 - Use the **duplicate** icon to copy a quiz.
 - Use the **trash** icon to delete a quiz.
 
@@ -98,14 +97,19 @@ Questions can be reordered, duplicated or deleted.
 
 ---
 
-## 4. Quiz Details & Game Settings
+## 4. Quiz Details and Game Settings
 
-### Details
+Open either section independently in the editor.
+
+### Quiz details
 
 - **Title** – required.
 - **Collection** – optional.
 - **Description** – optional.
-- **Player limit** – `0` = unlimited.
+
+### Game settings
+
+**Participant limit** is a whole number; `0` means unlimited. Collapsing this section keeps your selected settings.
 
 ### Scoring
 
@@ -128,6 +132,7 @@ This is a short pause **before each question starts**, from `0` to `30` seconds.
 
 - **Shuffle questions**
 - **Shuffle answers**
+- **Shuffle True/False answers** – also enable **Shuffle answers**.
 - **Allow late joins**
 - **Show leaderboard**
 - **Question type hint**
@@ -170,17 +175,23 @@ A code can only be used once.
 
 ### Choose when chat opens
 
-In the quiz editor, find **Room chat** and choose:
+In the quiz editor, open **Game settings → Room chat** and choose:
 
 - **Off**
 - **Lobby only**
 - **Between questions & rounds**
 - **Lobby & round breaks**
 
-You can also turn **Replies** and **Emoji reactions** on or off.
+You can also turn **Replies**, **Emoji reactions** and **Participant mentions** on or off. Participant mentions are off by default.
 
 Chat is always closed during the countdown, during a question, and after the quiz ends.
 The host can clear all chat messages or remove a single message.
+
+### Mentions
+
+Type **@** in an open chat to choose a name. The host can also use **@all** to mention everyone. Participants can mention other people only when **Participant mentions** is enabled; they cannot mention **@all**.
+
+The list supports tapping a name, arrow keys and Enter or Tab. Press Escape to close it. A badge on **Chat** marks unread mentions. Only the person mentioned sees their name highlighted; other people see normal text. Hiding chat stops its mention badges. The chat button is available only when the host allows chat. Messages and announcements are cleared when the quiz ends.
 
 ---
 
@@ -227,6 +238,8 @@ Announcements appear for all players in the lobby and between questions or round
 They are hidden during countdowns and questions.
 Use **Remove announcement** to delete it.
 
+For a live countdown, write **Quiz starting in {20} minutes**. The number in braces becomes a clock for everyone. Use one whole number from **1 to 60** per announcement. The countdown keeps its original end time after reconnecting, stops at zero, and does not start the quiz automatically.
+
 ### After the Quiz
 
 Host can:
@@ -265,7 +278,7 @@ From **My quizzes → Open rooms**, the host can rejoin, close one room, or clos
 
 ---
 
-## 7. Join a Quiz (Players)
+## 7. Join a Quiz (Participants)
 
 1. Open the website.
 2. Click **Join quiz**.
@@ -273,11 +286,14 @@ From **My quizzes → Open rooms**, the host can rejoin, close one room, or clos
 4. Enter your name.
 5. Click **Join**.
 
-Players wait in the lobby until the host starts.
-Players can rejoin an open room from the same browser. **Terms and Conditions** and **Privacy Policy** are linked at the bottom of the Join quiz page.
+Participants wait in the lobby until the host starts.
 
-During the quiz players see the question, timer, answer choices and their score.
-After the quiz, players see the leaderboard if the host allows it.
+An unknown or expired code shows **Room not available**, with a link to try another code. If the service cannot be reached, the page gives a connection error instead of loading indefinitely. An offline connection stays marked **Offline** until it can retry.
+
+Temporary disconnections reconnect automatically. Returning participants keep their identity, score and submitted answers; missed chat mentions are restored from the room history. Countdown clocks resync when the connection returns. You can rejoin an open room from the same browser. **Terms and Conditions** and **Privacy Policy** are linked at the bottom of the Join quiz page.
+
+During the quiz participants see the question, timer, answer choices and their score.
+After the quiz, participants see the leaderboard if the host allows it.
 
 ---
 

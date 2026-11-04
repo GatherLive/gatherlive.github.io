@@ -123,6 +123,7 @@ export class GiveawayRoom extends DurableObject {
       return {ok:true,report:{id:this.meta.reportId,quizId:this.meta.quizId,title:this.meta.title,results:this.engine.report()}};
     }catch(error){return rpcFailure(error);}
   }
+  available() {return !!this.engine&&!this.purging&&this.expiresAt()>Date.now();}
   getSummary(ownerId) {
     if(!this.engine||this.purging||this.engine.phase==='finished'||this.expiresAt()<=Date.now()||this.meta.ownerId!==ownerId)return null;
     return {code:this.engine.code,roomId:this.meta.reportId,quizId:this.meta.quizId,title:this.meta.title,phase:this.engine.phase,participants:this.engine.participantCount,expires:this.meta.expiresAt};

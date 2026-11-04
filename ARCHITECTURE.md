@@ -25,8 +25,19 @@ public/
     auth/                    Sign-in, sign-up, recovery and verification
     join/                    Quiz joining
     library/                 Saved quizzes, reports and open rooms
-    editor/                  Quiz model, editing, uploads and import/export
-    live/                    Room connection, screens, answers and timing
+    editor/
+      page.js                Separate quiz details, game settings and question editor
+      model.js               Quiz defaults, validation and round assignments
+      ai-prompt.js           Copyable AI instructions and importable format example
+      import-export.js       Quiz JSON import/export and prompt copying
+      actions.js, events.js, changes.js  Editor interactions and field updates
+      data.js                Saved quiz loading, saving and uploads
+    live/
+      connection.js          WebSocket lifecycle, room checks and reconnect recovery
+      session.js             Participant resume records and per-name storage
+      clock.js               Monotonic clock and server-time calibration
+      page.js                Lobby, question, result and unavailable-room screens
+      answers.js, timer.js   Answer submission, feedback and countdown rendering
     results/
       page.js                Loads a live or saved detailed report
       index.js               Report state, navigation and event handling
@@ -42,7 +53,14 @@ public/
       progress.js            Device progress and optional account sync
       map.js                 Interactive map controller
       styles.css, map.css    Learning and map styling
-    chat/                    Room chat, access applications and related actions
+    chat/
+      room-chat.js           Messages, announcements, unread counts and room settings
+      mention-composer.js    Debounced participant picker and keyboard/touch input
+      mentions.js            Draft ranges and recipient-specific mention rendering
+      countdown.js           Announcement clock formatting and text updates
+      events.js              Chat input and keyboard handling
+      access.js              Account access applications and status
+      styles.css             Mention list, message highlights and notification badge
     news/                    Live site announcement and dismissal
     legal/                   Policy text, page rendering and return links
     media/                   Encrypted room images and browser storage
@@ -50,13 +68,18 @@ public/
   fonts/                     Local fonts
   learn-data/                Geography data, flags and source attribution
   styles/                    Shared theme, components and responsive rules
+    loading.css              Morphing activity indicator with reduced-motion support
   vendor/                    Third-party browser libraries and their licences
 shared/
   quiz/engine.js             Quiz rules, scoring, rounds, validation and reports
   rooms/protocol.js          WebSocket message validation and limits
   http/api.js                Shared HTTP routes, auth and response handling
   media/room-media.js        Room image preparation and range responses
-  chat/                     Chat protocol and access rules
+  chat/
+    conversation.js          Room chat permissions, settings and message lifecycle
+    mentions.js              Bounded member lookup and server-validated recipient ranges
+    announcements.js         One persisted 1–60 minute announcement deadline
+    access.js                Invitation redemption, catalog lookup and claim limits
   learn/progress.js          Progress validation and merge rules
   site/control.js           Announcement and access-request rules
 worker/
@@ -98,6 +121,28 @@ Start in its `public/features/` folder. `page.js` renders or mounts the page; `a
 Results and Learn view factories receive live getters into their controller's state. This keeps asynchronous navigation and account changes connected to the current instance without duplicating state or adding circular module imports.
 
 Change quiz rules in `shared/quiz/engine.js`, shared HTTP behavior in `shared/http/api.js`, and Cloudflare transport or persistence in `worker/`. The development server uses the same shared rules and HTTP routes with a local room adapter.
+
+## Editor and quiz files
+
+Quiz details and Game settings are independent native disclosures. Their open states use the editor panel map, alongside question image and explanation disclosures. Expanding a section changes the view only; it does not change or reset quiz settings.
+
+`editor/ai-prompt.js` describes the same import format used by `import-export.js`. The prompt uses the editor limits: 1–500 questions, 5–300 seconds per question, 2–8 choices and the supported point values. Imported question IDs and round assignments are remapped together. Chat options, including `chatMentions`, are preserved and validated. Live messages, announcements, participant data and results are not part of a quiz export.
+
+## Joining and reconnecting
+
+The WebSocket carries authentication, room snapshots, answers and conversation events. A failed handshake triggers a bounded HTTP availability check at `GET /api/rooms/:code`. This endpoint returns only availability, keeps origin and request limits, and does not expose room contents or participant data. Unknown and expired rooms return 404. Initial connection attempts stop with an actionable error; established rooms continue to recover from temporary outages.
+
+Participant IDs and resume tokens stay in memory and, when allowed, per-room and per-name browser storage. Optional storage failures do not stop joining. Socket generations discard responses from older connections and prevent delayed token errors from redirecting a visitor who has left the room. A new connection clears stale latency samples and calibrates the monotonic display clock against server time.
+
+Submitted answers are restored from the server's participant snapshot. A browser answer cache cannot mark a different participant as answered. Acknowledgements for an older question are ignored. Unconfirmed chat mutations are not replayed automatically, because the server may already have applied them. Drafts survive temporary outages, name lookups are refreshed, and conversation snapshots identify missed mentions.
+
+## Chat and live announcements
+
+Participant mentions are opt-in. Only the verified host can mention everyone. The server checks recipient IDs, message ranges and room permissions. Suggestions are bounded to 20 names per request and reuse the room socket without broadcasting a full roster or writing room state. The browser escapes message content and highlights only the tokens addressing the current participant.
+
+An announcement countdown stores one server-generated end time. Existing browser timer updates render the clock locally; the deadline survives room restoration and reconnecting without per-second network messages or database writes. Countdown values are whole minutes from 1 to 60 and never start the quiz. Chat and announcements follow the room phase, and finished quizzes clear temporary conversation data.
+
+Invitation codes are hashed before redemption. Persistent catalogs support additional codes alongside existing configured hashes, while one-use claims and attempt limits remain authoritative. Plaintext invitations are not stored in live room state or reports.
 
 ## Build and checks
 

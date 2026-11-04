@@ -137,6 +137,7 @@ async function withLearning(ownerId,method,progress){
   try{return await task;}finally{if(learningQueues.get(path)===queued)learningQueues.delete(path);}
 }
 const adapter={
+ async available(code){const room=rooms.get(code);return !!room&&!room.closed&&roomExpires(room)>Date.now();},
  async announcement(){return site.snapshot();},
  async chatApplication(ownerId){return site.application(ownerId);},
  async applyChat(user){if((deletingOwners.get(user.id)||0)>Date.now())throw new HttpError(409,'Account deletion is in progress.');return site.apply(user);},
@@ -186,7 +187,7 @@ let localExtension=null;
 if(port>0&&['127.0.0.1','localhost','::1'].includes(host)){
   const extensionModule=pathToFileURL(join(root,'.local','dev-extension.mjs'));
   let module;try{module=await import(extensionModule.href);}catch(error){if(error.code!=='ERR_MODULE_NOT_FOUND'||error.url!==extensionModule.href)throw error;}
-  if(module)localExtension=await module.createDevExtension({env,stateDir,port,site,rooms,adapter,serial,persist,persistConversation,broadcast,sendConversation,roomExpires,accountChatAccess});
+  if(module)localExtension=await module.createDevExtension({env,stateDir,port,site,rooms,adapter,serial,persist,persistConversation,broadcast,sendConversation,roomExpires,accountChatAccess,accessStore,updateAccess});
 }
 const server=http.createServer(async(req,res)=>{
  try{

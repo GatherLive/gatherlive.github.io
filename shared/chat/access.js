@@ -5,7 +5,7 @@ const WINDOW=15*60*1000;
 const failure=(message,status=400)=>Object.assign(new Error(message),{status});
 export function configuredChatCodes(env) {
   let hashes;try{hashes=JSON.parse(env.CHAT_CODE_HASHES||'[]');}catch{hashes=[];}
-  if(!Array.isArray(hashes)||hashes.length<1||hashes.length>60||hashes.some(hash=>typeof hash!=='string'||!HEX.test(hash)))return [];
+  if(!Array.isArray(hashes)||hashes.length<1||hashes.some(hash=>typeof hash!=='string'||!HEX.test(hash)))return [];
   return hashes;
 }
 async function signer(env) {
@@ -19,7 +19,6 @@ export async function chatOwnerKey(env,ownerId) {
 }
 export async function chatCodeRequest(env,code,ownerId) {
   if(typeof code!=='string'||!/^\d{12}$/.test(code))throw failure('Enter a 12-digit chat code.');
-  if(!configuredChatCodes(env).length)throw failure('Chat activation is not configured.',503);
   const [sign,ownerKey]=await Promise.all([signer(env),chatOwnerKey(env,ownerId)]);
   return {digest:await sign('code:'+code),ownerKey};
 }
@@ -30,12 +29,13 @@ export function redeemChatCode(env,store,request,now=Date.now()) {
   const {digest,ownerKey}=request;
   if(store.account(ownerKey))return {ok:true};
   const hashes=configuredChatCodes(env);
-  if(!hashes.length)return {ok:false,status:503,message:'Chat activation is not configured.'};
+  if(!hashes.length&&(typeof store.code!=='function'||store.codeCount?.()===0))return {ok:false,status:503,message:'Chat activation is not configured.'};
   store.prune(now-WINDOW);
   const previous=store.attempt(ownerKey);
   const attempt=previous&&now-previous.at<WINDOW?previous:{at:now,attempts:0};
   if(attempt.attempts>=5)return {ok:false,status:429,message:'Too many code attempts. Try again in 15 minutes.'};
-  let valid=false;for(const hash of hashes)valid=same(hash,digest)||valid;
+  const registered=store.code?.(digest);
+  let valid=registered===true;if(registered===undefined)for(const hash of hashes)valid=same(hash,digest)||valid;
   const claimed=store.claim(digest);
   if(!valid||claimed!==undefined&&claimed!==ownerKey){
     store.saveAttempt(ownerKey,{at:attempt.at,attempts:attempt.attempts+1});
@@ -46,7 +46,9 @@ export function redeemChatCode(env,store,request,now=Date.now()) {
   return {ok:true};
 }
 export class MemoryChatCodes {
-  constructor(saved={}){this.claims=new Map(saved.claims??[]);this.attempts=new Map(saved.attempts??[]);this.applications=new Map(saved.applications??[]);this.erasures=new Map(saved.erasures??[]);}
+  constructor(saved={}){this.claims=new Map(saved.claims??[]);this.attempts=new Map(saved.attempts??[]);this.applications=new Map(saved.applications??[]);this.erasures=new Map(saved.erasures??[]);this.codes=new Map(saved.codes??[]);}
+  code(key){return this.codes.get(key);}
+  codeCount(){return this.codes.size;}
   prune(before){for(const [key,value]of this.attempts)if(value.at<before)this.attempts.delete(key);}
   attempt(key){return this.attempts.get(key);}
   saveAttempt(key,value){this.attempts.set(key,value);}
@@ -54,5 +56,5 @@ export class MemoryChatCodes {
   account(key){return [...this.claims.values()].includes(key);}
   saveClaim(key,value){this.claims.set(key,value);}
   revoke(key){for(const [digest,owner]of this.claims)if(owner===key)this.claims.set(digest,'');this.attempts.delete(key);}
-  serialize(){return {claims:[...this.claims],attempts:[...this.attempts],applications:[...this.applications],erasures:[...this.erasures]};}
+  serialize(){return {claims:[...this.claims],attempts:[...this.attempts],applications:[...this.applications],erasures:[...this.erasures],codes:[...this.codes]};}
 }

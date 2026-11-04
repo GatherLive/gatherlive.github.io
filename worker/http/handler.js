@@ -12,6 +12,7 @@ export default {
     const url=new URL(request.url);
     const isSiteSocket=url.pathname==='/api/site/updates'&&request.method==='GET';
     const isSocket=/^\/api\/rooms\/\d{6}\/ws$/.test(url.pathname) && request.method==='GET';
+    const isRoomCheck=/^\/api\/rooms\/\d{6}$/.test(url.pathname) && request.method==='GET';
     const isMedia=/^\/api\/rooms\/\d{6}\/media\/[a-f0-9-]{36}(?:\/plain)?$/.test(url.pathname) && request.method==='GET';
     const cacheKey=isMedia&&!url.pathname.endsWith('/plain')?new Request(url.origin+url.pathname):null;
     if(cacheKey){try{const cached=await caches.default.match(cacheKey);if(cached)return responseHeaders(request,env,mediaRange(cached,request));}catch{/* Caching must not block an image. */}}
@@ -19,7 +20,7 @@ export default {
       const ip=request.headers.get('CF-Connecting-IP') || 'unknown';
       // Large groups on one Wi-Fi share an IP. Keep host API and guest joins separate.
       const isMediaPreflight=request.method==='OPTIONS'&&/^\/api\/rooms\/\d{6}\/media\/[a-f0-9-]{36}(?:\/plain)?$/.test(url.pathname);
-      const limiter=isSiteSocket||url.pathname==='/api/site/announcement'||isSocket||isMedia||isMediaPreflight ? env.CONNECTION_LIMITER : env.API_LIMITER;
+      const limiter=isSiteSocket||url.pathname==='/api/site/announcement'||isSocket||isRoomCheck||isMedia||isMediaPreflight ? env.CONNECTION_LIMITER : env.API_LIMITER;
       if(limiter && !(await limiter.limit({key:ip})).success)return responseHeaders(request,env,json({error:'Too many requests. Please wait a minute.'},429));
     }
     if(isSiteSocket)return env.ACCOUNTS.getByName(SITE_CONTROL_REGISTRY).fetch(request);

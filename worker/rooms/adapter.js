@@ -7,6 +7,7 @@ import {chatCodeRequest} from '../../shared/chat/access.js';
 import {unwrapRpc} from '../http/errors.js';
 import {LIFETIME} from '../config.js';
 export function roomAdapter(env){return {
+  async available(code){return env.ROOMS.getByName(code).available();},
   async announcement(){return env.ACCOUNTS.getByName(SITE_CONTROL_REGISTRY).siteSnapshot();},
   async chatApplication(ownerId){if(!env.CHAT_CODE_PEPPER)return null;return env.ACCOUNTS.getByName(CHAT_ACCESS_REGISTRY).chatApplication(await chatOwnerKey(env,ownerId));},
   async applyChat(user){
