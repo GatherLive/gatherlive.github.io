@@ -1,0 +1,6 @@
+import {esc} from '../../core/dom.js';
+import {icon} from '../../core/icons.js';
+import {RELEASES} from './releases.js';
+export function releaseEntry(release){return `<article class="release-entry"><div><h3>${esc(release.version)}</h3><time datetime="${esc(release.date)}">${new Date(release.date+'T12:00:00Z').toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'})}</time></div><p>${esc(release.title)}</p><ul>${release.changes.map(change=>`<li>${esc(change)}</li>`).join('')}</ul></article>`;}
+export function changelog(releases=RELEASES){return `<details class="settings-disclosure"><summary>Changelog ${icon('down',18)}</summary><div class="release-list">${releases[0]?releaseEntry(releases[0]):''}</div>${releases.length>1?`<details class="settings-disclosure older-releases" id="older-releases"><summary>Older updates <span>${releases.length-1}</span>${icon('down',16)}</summary><div id="release-archive"></div></details>`:''}</details>`;}
+export function releaseArchive(count=5,releases=RELEASES){const rows=releases.slice(1,count+1);return rows.map(releaseEntry).join('')+(count<releases.length-1?'<button class="quiet-button" data-action="older-releases-more">Show more</button>':'');}

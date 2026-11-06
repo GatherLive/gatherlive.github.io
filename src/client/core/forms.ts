@@ -1,0 +1,2 @@
+export function honeypotField(){return '<div class="form-trap" aria-hidden="true"><label>Leave this field empty<input type="text" name="contact_url_confirm" tabindex="-1" autocomplete="off" spellcheck="false"></label></div>';}
+export function checkHoneypot(form){const value=form.querySelector('[name="contact_url_confirm"]')?.value;if(value)throw new Error('This request could not be completed. Please try again.');}

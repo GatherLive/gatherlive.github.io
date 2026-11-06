@@ -38,7 +38,7 @@ Participants do not need an account. Hosts need an account.
 
 1. Click **New quiz**.
 2. The quiz editor opens.
-3. Open **Quiz details** for the title, optional collection and description.
+3. Open **Quiz details** for the title, optional tags and description.
 4. Open **Game settings** for scoring, participant limits, countdowns, shuffling, rounds and room chat.
 5. Use the question editor below both sections to write questions.
 6. Click **Add question** for more, then **Save**.
@@ -104,12 +104,12 @@ Open either section independently in the editor.
 ### Quiz details
 
 - **Title** – required.
-- **Collection** – optional.
+- **Tags** – optional. Add up to 12 tags, then use the tag filters in My quizzes. Existing collections appear as tags.
 - **Description** – optional.
 
 ### Game settings
 
-**Participant limit** is a whole number; `0` means unlimited. Collapsing this section keeps your selected settings.
+**Participant limit** is a whole number; `0` uses your account limit (500 participants by default). Collapsing this section keeps your selected settings.
 
 ### Scoring
 
@@ -158,13 +158,13 @@ Apply for access or use a **one-time 12-digit invitation code**.
 
 ### Apply for access
 
-Open **Account → Room chat** and click **Apply for chat access** beside **Unlock chat**. The button is also available inside your room. Your signed-in email identifies the request, so there is no extra application form.
+Open **Settings → Account settings → Room chat access** and click **Apply for chat access** beside **Unlock chat**. The button is also available inside your room. Your signed-in email identifies the request, so there is no extra application form.
 
 **Request pending** means it is waiting for review. Approval enables chat for your account and quizzes. If declined, the page shows when you can apply again; the waiting period is seven days. Repeating an application does not create duplicate requests.
 
 ### Add the code to your account
 
-1. Open **Account**.
+1. Open **Settings → Account settings**.
 2. Go to **Room chat**.
 3. Enter the **12-digit invitation code**.
 4. Click **Unlock chat**.
@@ -310,11 +310,26 @@ Learning progress stays in your browser unless you turn on account sync. The cen
 
 ---
 
-## Site News and Account
+## Live room tools
+
+Use **Chat settings** to change chat permissions or **Announce** to send a room announcement. Announcement countdowns use `{20}` for 1–60 minutes and do not start the quiz. Start and advance questions with the usual host controls.
+
+## Find and organise quizzes
+
+**Search** opens the search field when needed. **Filter** opens a compact menu for tags, hosting status and sorting by newest, oldest, recent edits, recent hosting or name. Close it with **×**, Escape or a click outside. **Clear filters** restores the default view while keeping your search. Copy AI prompt, Import quiz and Sample quiz are in the page footer. Hosted quizzes have a subtle green treatment and can be hosted again. Available saved results and room history identify earlier sessions; old sessions without retained history cannot be recovered.
+
+## Site News and Settings
 
 When site news is available, a thin bar appears below the header. Its badge and headline link to the update. Use **×** to dismiss that publication on your device. A new publication can appear again. Removal and expiry hide the bar; connected visitors receive changes without refreshing.
 
-**Account** includes sign-out, password and account deletion controls, room chat access, and centered policy links. Opening a policy from Account keeps a Back to Account link. Account deletion also removes your chat application and synced progress. Clearing browser site data removes locally saved progress, session details and remembered dismissals.
+Open **Settings** from the header:
+
+- **Account settings**: change your password, manage room chat access, sign out or delete your account.
+- **Usage**: see uploaded images, saved quizzes and detailed results. Default limits are **200 images**, **100 quizzes**, **200 detailed results** and **500 participants per quiz**. Delete old data to reduce usage. Each **Delete all** action requires typing `DELETE`. Deleting all images also removes them from quizzes and results that use them; close your open rooms first. Saved summaries do not use the detailed results allowance.
+- **Request higher limits**: choose Teacher, Professor or Other, briefly explain why you need more room. You do not need to choose limits. Your request status and any custom reply appear in Usage. New applications may be temporarily paused. Approved limits apply to future saves and new rooms. Existing rooms keep their original participant limit.
+- **About Gather**: version, changelog, repository, contact and policies. Policy links return to About Gather.
+
+Existing content is kept if an account is above a new default limit; remove data or request higher limits before saving more. Saved results load in pages, and full answers load when opened. Deleting a quiz keeps its saved results and open room. Deleting your account removes saved data, usage requests, chat applications and synced progress. Clearing browser site data removes locally saved progress, session details and remembered dismissals.
 
 ---
 
@@ -329,3 +344,9 @@ When site news is available, a thin bar appears below the header. Its badge and 
 7. Share the 6-digit code.
 8. **Start quiz**.
 9. Reveal answers, use **Announce**, then finish and save results.
+
+To support Gather, open **Settings → Buy me a coffee**. This opens the Gather support page in a new tab.
+
+## Support Gather
+
+Settings includes **Buy me a coffee** below About Gather. You can also [support Gather here](https://buymeacoffee.com/gatherlive). Support is optional.

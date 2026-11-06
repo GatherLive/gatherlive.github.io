@@ -24,7 +24,7 @@ const exampleDomain=domain=>/^(?:localhost|(?:[^.]+\.)*(?:example\.(?:com|org|ne
 // This public support address is explicitly approved. Other emails
 // and all credential/configuration checks remain subject to the existing rules.
 const publicContactEmail = 'gathercontact@proton.me';
-const publicEmailFiles=new Set(['public/features/legal/content.js','scripts/privacy-check.mjs']);
+const publicEmailFiles=new Set(['src/client/features/legal/content.ts','scripts/privacy-check.mjs']);
 function identifyingLiterals(source,name){
   const emails=source.matchAll(/\b[A-Za-z0-9.!#$%&'*+\/=?^_`{|}~-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})\b/g);
   for(const [address,domain]of emails)if(!exampleDomain(domain)&&!(publicEmailFiles.has(name)&&address===publicContactEmail))return true;

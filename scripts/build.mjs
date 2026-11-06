@@ -3,6 +3,7 @@ import {resolve,posix} from 'node:path';
 import {createHash} from 'node:crypto';
 import {setDefaultResultOrder} from 'node:dns';
 import {loadConfig} from './config.mjs';
+import {buildClient} from './client-build.mjs';
 setDefaultResultOrder('ipv4first');
 const runtime=await loadConfig();
 const apiUrl=(runtime.PUBLIC_API_URL||'').replace(/\/$/,'');
@@ -25,6 +26,7 @@ if(apiUrl){
 const output=resolve('dist');
 await rm(output,{recursive:true,force:true});await mkdir(output,{recursive:true});
 await cp(resolve('public'),output,{recursive:true});
+await buildClient(output);
 await writeFile(resolve(output,'config.js'),`window.GATHER_CONFIG = ${JSON.stringify(browserConfig,null,2)};\n`);
 async function filesIn(directory,prefix=''){
   const files=[];

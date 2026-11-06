@@ -3,7 +3,8 @@ import {resolve,dirname} from 'node:path';
 import {access} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
 import assert from 'node:assert/strict';
-import {RoomEngine} from '../shared/quiz/engine.js';
+import {tsImport} from 'tsx/esm/api';
+const {RoomEngine}=await tsImport('../src/shared/quiz/engine.ts',import.meta.url);
 async function checkDirectory(directory){
  for(const entry of await readdir(directory,{withFileTypes:true})){
   if(entry.isDirectory()){
@@ -15,7 +16,8 @@ async function checkDirectory(directory){
   if(result.status)process.exit(result.status);
  }
 }
-for(const directory of ['public','shared','worker','scripts'])await checkDirectory(directory);
+const types=spawnSync('npm',['run','typecheck'],{stdio:'inherit'});if(types.status)process.exit(types.status);
+for(const directory of ['public','scripts'])await checkDirectory(directory);
 async function checkReferences(directory){
  for(const entry of await readdir(directory,{withFileTypes:true})){
   if(['vendor','learn-data'].includes(entry.name))continue;
@@ -31,7 +33,12 @@ async function checkReferences(directory){
   }
  }
 }
-for(const directory of ['public','shared','worker','scripts'])await checkReferences(directory);
+// Validate emitted browser URLs, including lazy-loaded styles and image assets.
+const {buildClient}=await import('./client-build.mjs');
+const {cp,mkdir,rm}=await import('node:fs/promises');
+const generated=resolve('.local/check-client');await rm(generated,{recursive:true,force:true});await mkdir(generated,{recursive:true});await cp('public',generated,{recursive:true});await buildClient(generated);
+await checkReferences(generated);
+await rm(generated,{recursive:true,force:true});
 const html=await readFile('public/index.html','utf8');
 for(const path of ['app.js','styles.css','config.js'])if(!html.includes(path))throw new Error(`Missing frontend asset: ${path}`);
 const quiz={title:'Reconnect check',questions:['q1','q2'].map(id=>({id,type:'single',prompt:'Choose',timeLimit:30,options:[{id:'yes',text:'Yes'},{id:'no',text:'No'}],correct:['yes']}))};
@@ -63,4 +70,4 @@ const kicked=kickedRoom.addPlayer('Kicked');
 kickedRoom.command(host,{type:'kick',playerId:kicked.playerId});
 assert.throws(()=>kickedRoom.addPlayer('Kicked',kicked.playerId,kicked.resumeToken),error=>error.code==='RESUME_INVALID');
 assert.notEqual(kickedRoom.addPlayer('Kicked').playerId,kicked.playerId);
-console.log('All JavaScript syntax, module references, entrypoint, and player reconnect checks passed.');
+console.log('TypeScript, emitted module references, entrypoint, and player reconnect checks passed.');

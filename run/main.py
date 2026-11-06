@@ -21,12 +21,12 @@ def main():
     version = subprocess.check_output([node, '--version'], text=True).strip()
     if int(version.lstrip('v').split('.')[0]) < 22:
         sys.exit('Please install Node.js 22 or newer.')
-    if not (ROOT / 'node_modules/ws/package.json').exists():
+    if not all((ROOT / 'node_modules' / name / 'package.json').exists() for name in ('ws', 'tsx', 'esbuild')):
         npm = shutil.which('npm')
         if not npm:
             sys.exit('npm is required for the first-time setup.')
-        print('Installing the live server dependency…', flush=True)
-        subprocess.run([npm, 'ci', '--omit=dev', '--no-audit', '--no-fund'], cwd=ROOT, check=True)
+        print('Installing project dependencies…', flush=True)
+        subprocess.run([npm, 'ci', '--no-audit', '--no-fund'], cwd=ROOT, check=True)
     child = subprocess.Popen([node, str(ROOT / 'scripts/dev-server.mjs'), '--host', args.host, '--port', str(args.port)], cwd=ROOT)
     try:
         return child.wait()
