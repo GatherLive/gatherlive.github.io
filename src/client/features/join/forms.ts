@@ -11,7 +11,7 @@ export function createFeaturesJoinForms(context: AppContext) {
                     if (!/^\d{6}$/.test(code) || !name)
                         throw new Error('Enter a six digit code and your name.');
                     const previous = savedPlayer(code, name);
-                    S.room = { ...previous, code, role: 'player', name };
+                    S.room = { ...previous, code, role: 'player', name, verificationCode: $('#join-verification-code')?.value.trim() };
                     try { localStorage.setItem('gather.name', name); } catch { }
                     S.fatalRoomError = null;
                     location.hash = `#room/${code}`;

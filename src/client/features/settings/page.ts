@@ -16,7 +16,7 @@ export function createFeaturesSettings(context: AppContext){
   if(!S.settingsReturn)try{S.settingsReturn=settingsDestination(sessionStorage.getItem('gather.settings.return'));}catch{S.settingsReturn='#';}
   if(S.usageOwner!==owner){S.usageOwner=owner;S.accountUsage=null;S.usageImages=[];imagePage=0;}
   S.disposeSettings=()=>{clearTimeout(usageTimer);generation++;S.cancelUsageDelete?.();S.cancelUsageDelete=null;};
-  const fromLearn=S.section==='learn',returnTo=fromLearn?(/^#learn(?:\/[a-z-]+)*$/.test(S.learnReturn||'')?S.learnReturn:'#learn'):(S.settingsReturn||'#'),back=area?'#settings':returnTo;
+  const returnTo=S.settingsReturn||'#',back=area?'#settings':returnTo;
   const headings={account:'Account settings',usage:'Usage',about:'About Gather'},heading=headings[area]||'Settings';
   let content;
   if(area==='account')content=accountSettings(context);

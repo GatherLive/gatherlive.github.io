@@ -12,3 +12,7 @@
 @import './features/library/tags.css';
 
 @import './styles/navigation.css';
+
+@import url("./features/editor/pin-region.css");
+@import './features/live/content-guard.css';
+@import './features/live/room-settings.css';

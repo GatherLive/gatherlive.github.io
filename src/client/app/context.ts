@@ -18,12 +18,13 @@ export interface AppState {
  heartbeat?: ReturnType<typeof setInterval>; lastSocketMessage?: number; lastRoute?: string;
  connectionStatus?: string; roomUnavailable?: boolean; fatalRoomError?: string;
  accountUsage?: DataRecord | null; usageOwner?: string; usageImages?: DataRecord[];
- settingsReturn?: string; authReturnTo?: string; learnReturn?: string;
+ settingsReturn?: string; authReturnTo?: string;
  chatApplication?: DataRecord | null; chatApplicationOwner?: string; chatAccessCache?: DataRecord;
  previousFocus?: HTMLElement; previousFocusAction?: string; hostedQuizzes?: Record<string,{lastHostedAt: number}>;
  quizFiltersOpen?: boolean; quizSearchOpen?: boolean; quizHostFilter?: string; quizSort?: string;
  reportPage?: number; reportTotal?: number; roomsToClose?: Array<{code: string; roomId: string}>;
- participants?: DataRecord[]; section?: string; learning?: DataRecord;
+ joinChallenge?: DataRecord | null; joinVerificationPrompt?: {code: string; name: string; message: string};
+ participants?: DataRecord[];
  disposeResults?: () => void; disposeSettings?: () => void; cancelUsageDelete?: () => void;
 }
 
@@ -68,7 +69,6 @@ type RuntimeMethod =
   | 'exportQuiz'
   | 'fitChoiceQuestion'
   | 'forgetClosedRoom'
-  | 'forgetLearningAccount'
   | 'forgetPlayer'
   | 'getToken'
   | 'home'
@@ -77,8 +77,11 @@ type RuntimeMethod =
   | 'importQuiz'
   | 'isOpenRoom'
   | 'joinView'
+  | 'joinVerificationMarkup'
+  | 'updateRoomSettings'
+  | 'receiveRoomSettings'
+  | 'disposeRoomSettings'
   | 'leaderboard'
-  | 'learningReturn'
   | 'loadAccountChat'
   | 'loadOpenRooms'
   | 'loadSavedReport'
@@ -93,6 +96,10 @@ type RuntimeMethod =
   | 'openRoomCards'
   | 'openSocket'
   | 'orderView'
+  | 'pinAreaEditor'
+  | 'bindPinRegionEditor'
+  | 'bindContentProtection'
+  | 'updateContentProtection'
   | 'pinView'
   | 'playerNameKey'
   | 'playerRoomKey'
@@ -123,7 +130,6 @@ type RuntimeMethod =
   | 'sendAnswer'
   | 'settingsView'
   | 'shell'
-  | 'showLearning'
   | 'showResults'
   | 'sliderView'
   | 'syncQuizFilters'

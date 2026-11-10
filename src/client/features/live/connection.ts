@@ -33,6 +33,7 @@ export function createFeaturesLiveConnection(context: AppContext) {
         connectRoom();
     }
     function disconnectRoom() {
+        context.disposeRoomSettings();
         S.syncTimers?.forEach(clearTimeout);
         S.syncTimers = [];
         S.chat?.destroy();
@@ -77,7 +78,7 @@ export function createFeaturesLiveConnection(context: AppContext) {
         S.roomUnavailable = unavailable;
         S.fatalRoomError = unavailable ? 'Check the code or ask the host for a new one.' : 'Could not connect. Check your connection and try again.';
         S.connected = false;S.connectionStatus = 'disconnected';S.wsGeneration++;
-        ws.onclose = null;ws.close();renderRoom();
+        if(ws){ws.onclose = null;ws.close();}renderRoom();
     }
     async function openSocket() {
         const room = S.room, generation = ++S.wsGeneration;
@@ -99,6 +100,26 @@ export function createFeaturesLiveConnection(context: AppContext) {
             previous.close();
         }
         S.ws = null;
+        let roomOrigin = S.config.apiUrl || '';
+        try {
+            const response = await fetch(apiURL(`/api/rooms/${room.code}`), {cache: 'no-store', signal: AbortSignal.timeout(6000)});
+            if (generation !== S.wsGeneration || S.room !== room) return;
+            if (response.status === 404) {failJoin(null, generation, true);return;}
+            const discovery = await response.json();
+            if (!response.ok) throw Object.assign(new Error(discovery.error || 'Could not connect. Please retry.'), {status: response.status});
+            if (discovery.apiUrl) {
+                const resolved = new URL(discovery.apiUrl);
+                if (resolved.origin !== discovery.apiUrl || resolved.username || resolved.password || resolved.protocol !== 'https:' && !(resolved.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(resolved.hostname))) throw new Error('The room address could not be verified.');
+                roomOrigin = resolved.origin;
+            }
+            if (S.images?.base !== roomOrigin) {S.images?.close();S.images = new RoomImages(roomOrigin, room.code);}
+        } catch(error) {
+            if(generation !== S.wsGeneration || S.room !== room)return;
+            if(error.status===429){failJoin(null,generation);S.fatalRoomError=error.message;renderRoom();return;}
+            if(!S.roomState&&S.retries>=2){failJoin(null,generation);return;}
+            S.connectionStatus='reconnecting';updateConnection();
+            S.reconnectTimer=setTimeout(openSocket, Math.min(700*2**S.retries++,5000)+Math.random()*250);return;
+        }
         let token;
         try {
             if (room.role === 'host')
@@ -123,7 +144,7 @@ export function createFeaturesLiveConnection(context: AppContext) {
             return;
         let url;
         try {
-            url = new URL(apiURL(`/api/rooms/${room.code}/ws`), location.href);
+            url = new URL(`${roomOrigin}/api/rooms/${room.code}/ws`, location.href);
             url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
         }
         catch {
@@ -144,7 +165,7 @@ export function createFeaturesLiveConnection(context: AppContext) {
             if (generation !== S.wsGeneration)
                 return;
             S.lastSocketMessage = Date.now();
-            ws.send(JSON.stringify(room.role === 'host' ? { type: 'auth', role: 'host', token, mediaVersion: globalThis.crypto?.subtle ? 2 : 1, conversationVersion: 1, chatSubscribed: !S.chat.hidden } : { type: 'auth', role: 'player', name: room.name, contact_url_confirm:room.contact_url_confirm||'',playerId: room.playerId, resumeToken: room.resumeToken, mediaVersion: globalThis.crypto?.subtle ? 2 : 1, conversationVersion: 1, chatSubscribed: !S.chat.hidden }));
+            ws.send(JSON.stringify(room.role === 'host' ? { type: 'auth', role: 'host', token, mediaVersion: globalThis.crypto?.subtle ? 2 : 1, conversationVersion: 1, chatSubscribed: !S.chat.hidden } : { type: 'auth', role: 'player', name: room.name, contact_url_confirm:room.contact_url_confirm||'',verificationCode:room.verificationCode,playerId: room.playerId, resumeToken: room.resumeToken, mediaVersion: globalThis.crypto?.subtle ? 2 : 1, conversationVersion: 1, chatSubscribed: !S.chat.hidden }));
             let heartbeatTicks = 0;
             S.heartbeat = setInterval(() => { if (generation !== S.wsGeneration)
                 return; if ((navigator.onLine as boolean) === false || Date.now() - S.lastSocketMessage >= 7500) {
@@ -177,7 +198,9 @@ export function createFeaturesLiveConnection(context: AppContext) {
             catch {
                 return;
             }
+            if (context.receiveRoomSettings(data)) return;
             if (data.type === 'welcome') {
+                delete room.verificationCode;S.joinVerificationPrompt = undefined;
                 room.playerId = data.playerId;
                 room.resumeToken = data.resumeToken;
                 if (room.role === 'player') {
@@ -366,6 +389,7 @@ export function createFeaturesLiveConnection(context: AppContext) {
         if (!S.connected)
             $$('.live-question button,.live-question input,.live-question textarea').forEach(el => el.disabled = true);
         S.chat?.refresh();
+        context.updateRoomSettings();
     }
     function connectionLabel() { const text = S.connected ? 'Connected' : ({ connecting: 'Connecting', reconnecting: 'Reconnecting', offline: 'Offline', disconnected: 'Disconnected' }[S.connectionStatus] || 'Connecting'); return `<span class="connection-dot" aria-hidden="true"></span><span>${text}</span>${!S.connected && S.room && !S.fatalRoomError ? '<button class="connection-retry" data-action="reconnect" aria-label="Reconnect now" title="Reconnect now">↻</button>' : ''}`; }
     function send(command) {

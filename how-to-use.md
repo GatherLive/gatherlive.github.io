@@ -20,7 +20,6 @@ Participants do not need an account. Hosts need an account.
 - Save quiz sets, import/export JSON, copy an AI quiz prompt.
 - Review detailed host analytics and download PDF, HTML or CSV results.
 - Rejoin open rooms, close one room, or close all rooms.
-- Learn world geography with maps, flags and capitals.
 
 ---
 
@@ -76,7 +75,7 @@ Special question settings:
 
 - **Type an answer** – add accepted answers, one per line. Capital letters and extra spaces are ignored.
 - **Number slider** – set Minimum, Maximum, Correct number and Accepted range (±).
-- **Pin on image** – upload an image and tap the correct spot. Set the accepted distance.
+- **Pin on image** – tap the image to place the correct dot. Choose **Circle** or **Box** for the accepted area. Drag its handles, use **Area size**, or press **+ / −** to resize it. Pins inside the area count as correct. The dot and area appear in the answer reveal and PDF/HTML reports.
 - **Information slide** – shows text or an image, no answer needed.
 
 Question types:
@@ -169,7 +168,7 @@ Open **Settings → Account settings → Room chat access** and click **Apply fo
 3. Enter the **12-digit invitation code**.
 4. Click **Unlock chat**.
 
-You can also unlock it inside a room by clicking **Unlock chat**.
+Inside a room, open **Settings → Chat settings → Unlock chat**.
 One code unlocks chat for your account and all your future quizzes.
 A code can only be used once.
 
@@ -201,7 +200,7 @@ The list supports tapping a name, arrow keys and Enter or Tab. Press Escape to c
 2. Click **Host** on a saved quiz.
 3. A **6-digit room code** is created.
 4. Share the code, or click **Copy link**.
-5. Wait for players to join.
+5. Wait for participants to join.
 6. Click **Start quiz**.
 
 You can also click **Host** inside the editor. It saves the quiz first.
@@ -297,26 +296,13 @@ After the quiz, participants see the leaderboard if the host allows it.
 
 ---
 
-## 8. Learn (Beta)
-
-Open **Learn** to practice world geography.
-
-- Country cards
-- Interactive maps
-- Flags, Maps, Capitals or All
-- Practice mode and test mode
-
-Learning progress stays in your browser unless you turn on account sync. The centered controls at the bottom let you sign in or enable sync. **Sources & notes**, **Terms and Conditions** and **Privacy Policy** are beside them.
-
----
-
 ## Live room tools
 
-Use **Chat settings** to change chat permissions or **Announce** to send a room announcement. Announcement countdowns use `{20}` for 1–60 minutes and do not start the quiz. Start and advance questions with the usual host controls.
+Open **Settings → Chat settings** to change chat permissions, or use **Announce** to send a room announcement. Announcement countdowns use `{20}` for 1–60 minutes and do not start the quiz. Start and advance questions with the usual host controls.
 
 ## Find and organise quizzes
 
-**Search** opens the search field when needed. **Filter** opens a compact menu for tags, hosting status and sorting by newest, oldest, recent edits, recent hosting or name. Close it with **×**, Escape or a click outside. **Clear filters** restores the default view while keeping your search. Copy AI prompt, Import quiz and Sample quiz are in the page footer. Hosted quizzes have a subtle green treatment and can be hosted again. Available saved results and room history identify earlier sessions; old sessions without retained history cannot be recovered.
+**Search** opens the search field when needed. **Filter** opens a compact menu for tags, hosting status and sorting by newest, oldest, recent edits, recent hosting or name. Close it with **×**, Escape or a click outside. **Clear filters** restores the default view while keeping your search. **Sample quiz**, **Import quiz** and **Copy AI prompt** are in the page footer. Hosted quizzes have a subtle green treatment and can be hosted again. Available saved results and room history identify earlier sessions; old sessions without retained history cannot be recovered.
 
 ## Site News and Settings
 
@@ -329,7 +315,7 @@ Open **Settings** from the header:
 - **Request higher limits**: choose Teacher, Professor or Other, briefly explain why you need more room. You do not need to choose limits. Your request status and any custom reply appear in Usage. New applications may be temporarily paused. Approved limits apply to future saves and new rooms. Existing rooms keep their original participant limit.
 - **About Gather**: version, changelog, repository, contact and policies. Policy links return to About Gather.
 
-Existing content is kept if an account is above a new default limit; remove data or request higher limits before saving more. Saved results load in pages, and full answers load when opened. Deleting a quiz keeps its saved results and open room. Deleting your account removes saved data, usage requests, chat applications and synced progress. Clearing browser site data removes locally saved progress, session details and remembered dismissals.
+Existing content is kept if an account is above a new default limit; remove data or request higher limits before saving more. Saved results load in pages, and full answers load when opened. Deleting a quiz keeps its saved results and open room. Deleting your account removes saved data, usage requests and chat applications. Clearing browser site data removes session details and remembered dismissals.
 
 ---
 
@@ -350,3 +336,11 @@ To support Gather, open **Settings → Buy me a coffee**. This opens the Gather 
 ## Support Gather
 
 Settings includes **Buy me a coffee** below About Gather. You can also [support Gather here](https://buymeacoffee.com/gatherlive). Support is optional.
+
+## Join verification
+
+In the waiting room, open **Settings** and enable **Join verification**. The switch confirms when saved and shows a verification code. Participants enter the room code and this second code from your screen. That code changes every 30 seconds. It is off by default and never requires a participant account. Returning participants can reconnect with their existing session.
+
+Room-code guessing, failed verification and rapid messages are rate limited. On the hosted site, current questions travel over secure connections; answers and future question content remain on the server until needed. Copy and image-drag controls discourage casual copying during a question. Anything visible on a screen can still be captured.
+
+Large photo uploads are optimized when a smaller image preserves clarity. Small images, diagrams and animation are kept unchanged when compression would reduce quality.

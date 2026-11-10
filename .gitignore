@@ -21,6 +21,8 @@ worker/env.d.ts
 *.db
 *.har
 .env.local
+/api-do-not-publsih/
+/api-do-not-publish/
 
 # Private local maintenance files; never publish these.
 /tests/

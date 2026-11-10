@@ -10,7 +10,6 @@ export function createFeaturesAuthForms(context: AppContext) {
     const toast = (...args) => context.toast(...args);
     const discardTurnstile = (...args) => context.discardTurnstile(...args);
     const saveSession = (...args) => context.saveSession(...args);
-    const learningReturn = (...args) => context.learningReturn(...args);
     return { forms: { "auth-form": { submit: async (form) => {
                     checkHoneypot(form);
                     const email = $('#auth-email')?.value.trim(), password = $('#auth-password')?.value;
@@ -32,7 +31,7 @@ export function createFeaturesAuthForms(context: AppContext) {
                             discardTurnstile();
                             saveSession(data);
                             S.authMessage = '';
-                            const destination = /^#settings(?:\/(?:account|usage|about))?$/.test(S.authReturnTo || '') ? S.authReturnTo : learningReturn();
+                            const destination = /^#settings(?:\/(?:account|usage|about))?$/.test(S.authReturnTo || '') ? S.authReturnTo : '#dashboard';
                             S.authReturnTo = null; if(location.hash===destination)await context.route();else location.hash = destination;
                         }
                         else {

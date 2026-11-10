@@ -21,6 +21,10 @@
       {
         "name": "ACCOUNTS",
         "class_name": "AccountRooms"
+      },
+      {
+        "name": "ROOM_GATE",
+        "class_name": "RoomGate"
       }
     ]
   },
@@ -31,7 +35,8 @@
         "GiveawayRoom",
         "AccountRooms"
       ]
-    }
+    },
+    {"tag": "v2", "new_sqlite_classes": ["RoomGate"]}
   ],
   "ratelimits": [
     {

@@ -1,3 +1,5 @@
+import {pinRegionDot, pinRegionSvg} from '../../../core/pin-regions.js';
+import {safeImage} from '../../../core/dom.js';
 export function createResultsResponsesView(viewContext) {
     function questionPicker() {
         if (!viewContext.data.questions.length)
@@ -15,7 +17,7 @@ export function createResultsResponsesView(viewContext) {
     function answerKey(q) {
         if (viewContext.OPINION_TYPES.has(q.type))
             return '';
-        return `<section class="question-answer-key"><h3>Correct answer</h3>${q.type === 'order' ? `<ol>${q.correct.map(id => `<li dir="auto">${viewContext.esc(viewContext.answerText(q, id))}</li>`).join('')}</ol>` : `<p dir="auto">${viewContext.esc(viewContext.correctText(q))}</p>`}</section>`;
+        return `<section class="question-answer-key"><h3>Correct answer</h3>${q.type === 'pin' && safeImage(q.image) ? `<div class="pin-area report-pin-area"><img src="${viewContext.esc(safeImage(q.image))}" alt="Correct answer area" loading="lazy">${pinRegionSvg(q)}${pinRegionDot(q)}</div>` : ''}${q.type === 'order' ? `<ol>${q.correct.map(id => `<li dir="auto">${viewContext.esc(viewContext.answerText(q, id))}</li>`).join('')}</ol>` : `<p dir="auto">${viewContext.esc(viewContext.correctText(q))}</p>`}</section>`;
     }
     function questionView(animateCard = false) {
         const stat = viewContext.data.questionStats[viewContext.state.question];

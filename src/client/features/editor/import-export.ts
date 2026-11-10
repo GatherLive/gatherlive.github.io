@@ -41,6 +41,7 @@ export function createFeaturesEditorImportExport(context: AppContext) {
                 if (!raw || typeof raw !== 'object' || !TYPES[raw.type])
                     throw new Error('Every question needs a supported question type.');
                 const q = { ...newQuestion(raw.type), ...raw, id: String(raw.id || uid()), prompt: String(raw.prompt || ''), image: String(raw.image || ''), explanation: String(raw.explanation || ''), options: [], correct: [], acceptedAnswers: Array.isArray(raw.acceptedAnswers) ? raw.acceptedAnswers.map(String) : [] };
+                if(q.type==='pin'&&raw.answerRegion==null)delete q.answerRegion;
                 const remap = new Map();
                 q.options = (Array.isArray(raw.options) ? raw.options : []).map(o => { const id = uid(); remap.set(o.id, id); return { id, text: String(o.text || ''), image: String(o.image || '') }; });
                 q.correct = (Array.isArray(raw.correct) ? raw.correct : []).map(id => remap.get(id)).filter(Boolean);

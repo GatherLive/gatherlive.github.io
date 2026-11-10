@@ -8,7 +8,6 @@ export function createAppRouter(context: AppContext) {
     const closeModal = (...args) => context.closeModal(...args);
     const disconnectRoom = (...args) => context.disconnectRoom(...args);
     const shell = (...args) => context.shell(...args);
-    const showLearning = (...args) => context.showLearning(...args);
     const activeUser = (...args) => context.activeUser(...args);
     const authView = (...args) => context.authView(...args);
     const dashboard = (...args) => context.dashboard(...args);
@@ -37,47 +36,12 @@ export function createAppRouter(context: AppContext) {
         S.lastRoute=location.hash||'#';
         if(!['settings','host','terms','privacy'].includes(path))S.authReturnTo=null;
         const returnTo = new URLSearchParams(queryIndex < 0 ? '' : raw.slice(queryIndex + 1)).get('return') || '#';
-        if (path === 'learn') {
-            S.section = 'learn';
-            S.learnReturn = location.hash;
-            try {
-                sessionStorage.setItem('gather.section', 'learn');
-                sessionStorage.setItem('gather.learn.route', S.learnReturn);
-            }
-            catch { }
-        }
-        else if ((path === 'account' || path === 'settings' || policyRoute) && !S.section) {
-            try {
-                S.section = sessionStorage.getItem('gather.section') || 'quiz';
-                S.learnReturn = sessionStorage.getItem('gather.learn.route') || '#learn';
-            }
-            catch {
-                S.section = 'quiz';
-            }
-        }
-        else if (path !== 'account' && path !== 'settings' && !policyRoute) {
-            S.section = 'quiz';
-            try {
-                sessionStorage.setItem('gather.section', 'quiz');
-            }
-            catch { }
-        }
+        if (path === 'learn') { location.replace('#'); return; }
         closeModal();
         window.scrollTo(0, 0);
-        if (path !== 'learn' && S.learning) {
-            S.learning.destroy();
-            S.learning = null;
-        }
-        if (!['learn', 'host', 'reset', 'terms', 'privacy'].includes(path))
-            try {
-                sessionStorage.removeItem('gather.learn.return');
-            }
-            catch { }
-        if (path !== 'room' && (S.ws || (path === 'learn' && S.room))) {
+        if (path !== 'room' && S.ws) {
             disconnectRoom();
             S.roomState = null;
-            if (path === 'learn')
-                S.room = null;
         }
         if (policyRoute) {
             shell(policyPage(path, icon('back', 15), returnTo));
@@ -88,10 +52,6 @@ export function createAppRouter(context: AppContext) {
         if (path === 'settings') {
             if (!activeUser() && parts[0] !== 'about') { S.authReturnTo = location.hash; S.authMode = 'login'; authView(); return; }
             context.settingsView(['account','usage','about'].includes(parts[0])?parts[0]:''); return;
-        }
-        if (path === 'learn') {
-            await showLearning(parts, version);
-            return;
         }
         if (path === 'host' || path === 'dashboard' || path === 'account' || path === 'edit' || path === 'results') {
             if (!activeUser()) {

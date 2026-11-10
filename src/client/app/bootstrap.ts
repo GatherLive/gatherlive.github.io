@@ -15,6 +15,9 @@ import { createFeaturesEditorEvents } from '../features/editor/events.js';
 import { createLibraryFilters } from '../features/library/filters.js';
 import { createFeaturesEditorChanges } from '../features/editor/changes.js';
 import { createFeaturesLivePinPlacement } from '../features/live/pin-placement.js';
+import {createRoomSettings} from '../features/live/room-settings.js';
+import {createRoomContentGuard} from '../features/live/content-guard.js';
+import {createPinRegionEditor} from '../features/editor/pin-region.js';
 import { esc } from '../core/dom.js';
 import { S } from './state.js';
 import { ReorderLists } from '../core/reorder.js';
@@ -43,7 +46,6 @@ import { createFeaturesChatAccess } from '../features/chat/access.js';
 import { createFeaturesSettings } from '../features/settings/page.js';
 import { createFeaturesAccountPage } from '../features/account/page.js';
 import { createFeaturesResultsSummary } from '../features/results/summary.js';
-import { createFeaturesLearnPage } from '../features/learn/page.js';
 import { createAppRouter } from './router.js';
 import { createAppStartup } from './startup.js';
 import { createAppActions } from './actions.js';
@@ -57,7 +59,7 @@ import { createFeaturesAccountActions } from '../features/account/actions.js';
 import { createAppEvents } from './events.js';
 // One shared runtime connects feature controllers without circular module imports.
 const context = { state: S, actions: {}, forms: {}, inputs: [], changes: [], clicks: [], keys: [], escapeForError: esc } as AppContext;
-const factories = [createFeaturesResultsPage, createAppUi, createServicesApi, createServicesSession, createFeaturesAuthTurnstile, createFeaturesAuthPage, createFeaturesHomePage, createFeaturesJoinPage, createFeaturesLibraryPage, createFeaturesLibraryRooms, createFeaturesEditorModel, createFeaturesEditorTags, createFeaturesEditorPage, createFeaturesEditorData, createFeaturesEditorImportExport, createCoreReordering, createFeaturesLiveSession, createFeaturesLiveConnection, createFeaturesLiveMedia, createFeaturesLivePage, createFeaturesLiveAnswers, createFeaturesLiveTimer, createFeaturesChatAccess, createFeaturesAccountPage, createFeaturesSettings, createFeaturesResultsSummary, createFeaturesLearnPage, createAppRouter, createAppStartup, createAppActions, createFeaturesChatActions, createFeaturesLiveActions, createFeaturesAuthActions, createFeaturesLibraryActions, createFeaturesEditorActions, createFeaturesResultsActions, createFeaturesAccountActions, createAppEvents, createFeaturesChatForms, createFeaturesAccountForms, createFeaturesAuthForms, createFeaturesJoinForms, createFeaturesLiveForms, createFeaturesChatEvents, createAppAccessibility, createFeaturesAccountEvents, createFeaturesJoinEvents, createFeaturesLibraryEvents, createFeaturesLiveEvents, createFeaturesEditorEvents, createLibraryFilters, createFeaturesEditorChanges, createFeaturesLivePinPlacement];
+const factories = [createFeaturesResultsPage, createAppUi, createServicesApi, createServicesSession, createFeaturesAuthTurnstile, createFeaturesAuthPage, createFeaturesHomePage, createFeaturesJoinPage, createFeaturesLibraryPage, createFeaturesLibraryRooms, createFeaturesEditorModel, createFeaturesEditorTags, createFeaturesEditorPage, createFeaturesEditorData, createFeaturesEditorImportExport, createCoreReordering, createFeaturesLiveSession, createFeaturesLiveConnection, createFeaturesLiveMedia, createFeaturesLivePage, createFeaturesLiveAnswers, createFeaturesLiveTimer, createFeaturesChatAccess, createFeaturesAccountPage, createFeaturesSettings, createFeaturesResultsSummary, createAppRouter, createAppStartup, createAppActions, createFeaturesChatActions, createFeaturesLiveActions, createFeaturesAuthActions, createFeaturesLibraryActions, createFeaturesEditorActions, createFeaturesResultsActions, createFeaturesAccountActions, createAppEvents, createFeaturesChatForms, createFeaturesAccountForms, createFeaturesAuthForms, createFeaturesJoinForms, createFeaturesLiveForms, createFeaturesChatEvents, createAppAccessibility, createFeaturesAccountEvents, createFeaturesJoinEvents, createFeaturesLibraryEvents, createFeaturesLiveEvents, createFeaturesEditorEvents, createLibraryFilters, createFeaturesEditorChanges, createFeaturesLivePinPlacement, createPinRegionEditor, createRoomContentGuard, createRoomSettings];
 for (const create of factories) {
     const feature = create(context);
     const descriptors = Object.getOwnPropertyDescriptors(feature);
@@ -74,5 +76,7 @@ for (const create of factories) {
     Object.defineProperties(context, descriptors);
 }
 S.reorder = new ReorderLists({ move: context.moveReordered, allowed: context.reorderAllowed });
+context.bindPinRegionEditor();
+context.bindContentProtection();
 context.bindEvents();
 void context.boot();

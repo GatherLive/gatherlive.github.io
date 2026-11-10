@@ -23,7 +23,7 @@ export function createFeaturesEditorChanges(context: AppContext) {
             return true;
         }
         if (!S.draft)
-            return true;
+            return false;
         if (el.dataset.sfield === 'roundsEnabled') {
             if (el.checked)
                 ensureRounds();
@@ -40,7 +40,7 @@ export function createFeaturesEditorChanges(context: AppContext) {
         }
         const q = S.draft.questions[S.questionIndex];
         if (!q)
-            return true;
+            return false;
         if (el.dataset.qfield === 'type') {
             const fresh = newQuestion(el.value);
             S.draft.questions[S.questionIndex] = { ...fresh, id: q.id, prompt: q.prompt, image: q.image, timeLimit: q.timeLimit, explanation: q.explanation };

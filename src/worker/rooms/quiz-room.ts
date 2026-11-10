@@ -1,4 +1,5 @@
 import type {Quiz, RoomMeta} from '../../shared/types.js';
+import {poolChatAccess,poolUnlockChat} from '../../shared/rooms/pool.js';
 import type {WorkerEnv} from '../env.js';
 import {CHUNK_SIZE} from '../config.js';
 import {DurableObject} from 'cloudflare:workers';
@@ -15,6 +16,8 @@ import {json} from '../../shared/http/api.js';
 import {decodeMessage} from '../../shared/rooms/protocol.js';
 import {allowMessage} from '../../shared/rooms/protocol.js';
 import {authorize} from '../../shared/rooms/protocol.js';
+import {snapshotBatch} from '../../shared/rooms/protocol.js';
+import {repeatedFlood} from '../../shared/rooms/protocol.js';
 import {chatCodeRequest} from '../../shared/chat/access.js';
 import {safeError} from '../../shared/rooms/protocol.js';
 import {CONVERSATION_COMMANDS} from '../../shared/chat/conversation.js';
@@ -30,6 +33,7 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
   declare hostSockets: Set<WebSocket>;
   declare media: RoomMedia;
   declare creating: boolean;
+  private savedPlayers = new Map<string,string>();
 
   constructor(ctx: DurableObjectState,env: WorkerEnv) {
     super(ctx,env);
@@ -47,8 +51,15 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
         else if(conversation.length)this.engine.conversation=new RoomConversation(this.engine.settings,JSON.parse(conversation.map(p=>p.data).join('')),{unlocked:this.engine.chatUnlocked});
         const playerParts=new Map();
         for(const part of ctx.storage.sql.exec<{id: string; data: string}>('SELECT id,data FROM player_chunks ORDER BY id,part').toArray()){if(!playerParts.has(part.id))playerParts.set(part.id,[]);playerParts.get(part.id).push(part.data);}
-        for(const player of ctx.storage.sql.exec<{id: string; data: string}>('SELECT id,data FROM players').toArray())this.engine.restorePlayer(JSON.parse(player.data==='null'?(playerParts.get(player.id)||[]).join(''):player.data));
+        for(const player of ctx.storage.sql.exec<{id: string; data: string}>('SELECT id,data FROM players').toArray()){
+          const encoded=player.data==='null'?(playerParts.get(player.id)||[]).join(''):player.data;
+          this.engine.restorePlayer(JSON.parse(encoded));this.savedPlayers.set(player.id,encoded);
+        }
         if(this.engine.phase==='finished'&&(saved.conversation?.messages?.length||saved.conversation?.announcement))this.checkpoint();
+      }
+      if(this.engine){
+        const connected=new Set(ctx.getWebSockets().map(ws=>ws.deserializeAttachment()).filter(id=>id?.role==='player'&&!id.superseded&&!id.throttled&&id.roomId===this.meta.reportId).map(id=>id.playerId));
+        for(const player of this.engine.players.values())if(player.connected&&!connected.has(player.id)){this.engine.disconnect(player.id);this.savePlayer(player.id);}
       }
       if(this.engine?.mediaGate?.hostRequired)this.engine.mediaGate.hostReady=ctx.getWebSockets().some(ws=>{const id=ws.deserializeAttachment();return id?.role==='host'&&!id.superseded&&id.roomId===this.meta?.reportId&&id.mediaReadyToken===this.engine.mediaGate.token;});
       this.hostSockets=new Set(ctx.getWebSockets().filter(ws=>{const identity=ws.deserializeAttachment();return identity?.role==='host'&&!identity.superseded&&identity.roomId===this.meta?.reportId;}));
@@ -72,15 +83,18 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
   expiresAt(){return this.engine?.phase==='finished'&&Number.isFinite(this.engine.finishedAt)?this.engine.finishedAt+FINISHED_RETENTION:this.meta?.expiresAt;}
   checkpoint() {
     const state=JSON.stringify(this.engine.serialize({includePlayers:false,includeConversation:false}));
+    const changed: [string,string][]=[];
+    const removed=[...this.savedPlayers.keys()].filter(id=>!this.engine.players.has(id));
     this.ctx.storage.transactionSync(()=>{
       this.ctx.storage.sql.exec('INSERT OR REPLACE INTO checkpoint(id,state,meta) VALUES(1,?,?)','null',JSON.stringify(this.meta));
       this.ctx.storage.sql.exec('DELETE FROM checkpoint_chunks');
       chunks(state).forEach((part,index)=>this.ctx.storage.sql.exec('INSERT INTO checkpoint_chunks(part,data) VALUES(?,?)',index,part));
-      this.ctx.storage.sql.exec('DELETE FROM players');
-      this.ctx.storage.sql.exec('DELETE FROM player_chunks');
-      for(const id of this.engine.players.keys())this.writePlayer(id);
+      for(const id of removed){this.ctx.storage.sql.exec('DELETE FROM players WHERE id=?',id);this.ctx.storage.sql.exec('DELETE FROM player_chunks WHERE id=?',id);}
+      for(const id of this.engine.players.keys()){const encoded=this.writePlayer(id);if(encoded!==null)changed.push([id,encoded]);}
       this.writeConversation();
     });
+    for(const id of removed)this.savedPlayers.delete(id);
+    for(const [id,encoded]of changed)this.savedPlayers.set(id,encoded);
   }
   writeConversation() {
     this.ctx.storage.sql.exec('DELETE FROM conversation_chunks');
@@ -90,13 +104,15 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
   saveConversation() {this.ctx.storage.transactionSync(()=>this.writeConversation());}
   writePlayer(id) {
     const player=this.engine.serializePlayer(id);
-    if(!player)return;
+    if(!player)return null;
     const encoded=JSON.stringify(player);
+    if(this.savedPlayers.get(id)===encoded)return null;
     this.ctx.storage.sql.exec('DELETE FROM player_chunks WHERE id=?',id);
-    this.ctx.storage.sql.exec('INSERT OR REPLACE INTO players(id,data) VALUES(?,?)',id,encoded.length<=CHUNK_SIZE?encoded:'null');
+    this.ctx.storage.sql.exec('INSERT INTO players(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',id,encoded.length<=CHUNK_SIZE?encoded:'null');
     if(encoded.length>CHUNK_SIZE)chunks(encoded).forEach((part,index)=>this.ctx.storage.sql.exec('INSERT INTO player_chunks(id,part,data) VALUES(?,?,?)',id,index,part));
+    return encoded;
   }
-  savePlayer(id) {this.ctx.storage.transactionSync(()=>this.writePlayer(id));}
+  savePlayer(id) {let encoded=null;this.ctx.storage.transactionSync(()=>{encoded=this.writePlayer(id);});if(encoded!==null)this.savedPlayers.set(id,encoded);}
   async schedule() {
     if(!this.engine)return;
     let next=this.expiresAt();
@@ -125,6 +141,7 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
     }catch(error){return rpcFailure(error);}finally{this.creating=false;}
   }
   async accountChatAccess(ownerId){
+    const remote=await poolChatAccess(this.env,ownerId);if(remote!==null)return remote;
     if(!this.env.CHAT_CODE_PEPPER)return false;
     try{return (await this.env.ACCOUNTS.getByName(CHAT_ACCESS_REGISTRY).getChatAccess(await chatOwnerKey(this.env,ownerId))).unlocked===true;}catch{return false;}
   }
@@ -166,7 +183,7 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
         const index=this.env.ACCOUNTS.getByName(ownerId),entry=(await index.list()).find(room=>room.code===code);
         if(entry)await index.remove(code,entry.expires);
       }
-      await this.ctx.storage.deleteAll();this.initializeStorage();this.engine=null;this.meta=null;this.media=new RoomMedia();
+      await this.ctx.storage.deleteAll();this.initializeStorage();this.savedPlayers.clear();this.engine=null;this.meta=null;this.media=new RoomMedia();
     })();
     try{await this.purging;}finally{this.purging=null;}
   }
@@ -184,12 +201,12 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
       if(request.headers.get('Upgrade')?.toLowerCase()!=='websocket')return json({error:'Use a WebSocket connection.'},426);
       const pair=new WebSocketPair();const [client,server]=Object.values(pair);
       this.ctx.acceptWebSocket(server);
-      server.serializeAttachment({acceptedAt:Date.now(),roomId:this.meta.reportId});
+      server.serializeAttachment({acceptedAt:Date.now(),roomId:this.meta.reportId,network:request.headers.get('X-Gather-Network')||''});
       await this.schedule();
       return new Response(null,{status:101,webSocket:client});
     }catch(error){return json({error:error.message},error.status || 500);}
   }
-  send(ws,body) {try{ws.send(JSON.stringify(body));}catch{}}
+  send(ws,body) {try{ws.send(typeof body==='string'?body:JSON.stringify(body));}catch{}}
   sendState(ws,identity) {this.send(ws,{type:'state',state:this.engine.snapshot(identity.role==='host',identity.playerId,{media:identity.mediaVersion||false,conversation:identity.conversationVersion===1})});}
   sendConversation(ws,identity) {if(identity.conversationVersion===1)this.send(ws,{type:'conversation',state:this.engine.conversation.snapshot(identity,this.engine.phase)});}
   broadcastConversation(event) {
@@ -214,9 +231,10 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
   }
   broadcast() {
     if(!this.engine)return;
+    const message=snapshotBatch(this.engine,true);
     for(const ws of this.ctx.getWebSockets()){
       const identity=ws.deserializeAttachment();
-      if(identity?.role && !identity.superseded && identity.roomId===this.meta.reportId)this.sendState(ws,identity);
+      if(identity?.role && !identity.superseded && identity.roomId===this.meta.reportId)this.send(ws,message(identity));
     }
   }
   broadcastJoins() {
@@ -237,18 +255,21 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
       this.ensure();
       message=decodeMessage(raw);
       let identity=ws.deserializeAttachment() || {};
+      if(identity.throttled)return;
       if(identity.superseded || identity.roomId!==this.meta.reportId){ws.serializeAttachment({superseded:true});try{ws.close(4001,'This connection is no longer active.');}catch{}return;}
       if(!identity.role && Date.now()-(identity.acceptedAt || 0)>=10000){ws.serializeAttachment({superseded:true});ws.close(4008,'Join timed out.');return;}
       if(identity.authenticating)throw new HttpError(409,'Sign-in is already in progress.');
-      if(!allowMessage(identity,Date.now(),message.type))throw new HttpError(429,'Please slow down.');
+      const allowed=allowMessage(identity,Date.now(),message.type);
       ws.serializeAttachment(identity);
+      if(!allowed)throw new HttpError(429,'Please slow down.');
       this.engine.tick();
       await persistTransition();
       if(!identity.role){
         const engine=this.engine,roomId=this.meta.reportId,authId=crypto.randomUUID();
         ws.serializeAttachment({...identity,authenticating:authId});
         let auth,accountChat=false;
-        try{auth=await authorize(engine,this.meta,this.env,message);if(auth.identity.role==='host')accountChat=await this.accountChatAccess(auth.identity.userId);}
+        const guard=identity.network&&this.env.ROOM_GATE?this.env.ROOM_GATE.getByName(identity.network):null;
+        try{auth=await authorize(engine,this.meta,this.env,message,guard?{check:()=>guard.verification(engine.code),failed:()=>guard.verification(engine.code,true)}:undefined);if(auth.identity.role==='host')accountChat=await this.accountChatAccess(auth.identity.userId);}
         finally{const current=ws.deserializeAttachment();if(current?.authenticating===authId){delete current.authenticating;ws.serializeAttachment(current);}}
         this.ensure();
         await persistTransition();
@@ -269,6 +290,11 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
         }
         this.send(ws,auth.welcome);this.sendState(ws,identity);this.sendConversation(ws,identity);this.broadcastJoins();await this.schedule();return;
       }
+      if(message.type==='join_code_request'){
+        if(identity.role!=='host'||identity.userId!==this.meta.ownerId)throw new HttpError(403,'Only the host can view the join verification code.');
+        if(this.engine.settings.joinVerification&&this.engine.phase!=='finished')this.send(ws,{type:'join_code',roomCode:this.engine.code,...await this.engine.joinChallenge()});
+        return;
+      }
       if(message.type==='ping'){this.send(ws,{type:'pong',...(typeof message.id==='string'&&message.id.length<=80?{id:message.id,serverReceivedAt}:{}),serverNow:Date.now()});return;}
       if(message.type==='chat_subscribe'){
         if(identity.conversationVersion!==1||typeof message.enabled!=='boolean')throw new HttpError(400,'Choose whether to receive chat.');
@@ -280,8 +306,8 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
         if(['countdown','question','finished'].includes(this.engine.phase))throw new HttpError(409,'Unlock chat before starting or between questions.');
         const engine=this.engine,roomId=this.meta.reportId;
         if(!engine.chatUnlocked){
-          const request=await chatCodeRequest(this.env,message.code,this.meta.ownerId);
-          const grant=await this.env.ACCOUNTS.getByName(CHAT_ACCESS_REGISTRY).redeemCode(request);
+          const remote=await poolUnlockChat(this.env,this.meta.ownerId,message.code);
+          const grant=remote?{ok:true,status:200,message:''}:await this.env.ACCOUNTS.getByName(CHAT_ACCESS_REGISTRY).redeemCode(await chatCodeRequest(this.env,message.code,this.meta.ownerId));
           if(!grant?.ok)throw new HttpError(grant?.status||503,grant?.message||'Chat activation is temporarily unavailable.');
           this.ensure();
           if(this.engine!==engine||this.meta.reportId!==roomId||ws.deserializeAttachment()?.superseded)throw new HttpError(409,'This room has changed. Please reconnect.');
@@ -316,6 +342,9 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
     }catch(error){
       await persistTransition();
       this.send(ws,{...safeError(error),...(CONVERSATION_COMMANDS.has(message?.type)||message?.type==='chat_subscribe'?{scope:'conversation',requestId:message.requestId}:{})});
+      const identity=ws.deserializeAttachment();
+      if(identity&&error.status===429){if(repeatedFlood(identity)){identity.throttled=true;try{ws.close(1008,'Too many messages. Reconnect after a short pause.');}catch{}}ws.serializeAttachment(identity);}
+      if(identity&&!identity.role&&!identity.superseded){identity.authFailures=(identity.authFailures||0)+1;ws.serializeAttachment(identity);if(identity.authFailures>=5){ws.serializeAttachment({...identity,superseded:true});try{ws.close(4008,'Too many join attempts. Wait a minute and retry.');}catch{}}}
     }
   }
   async webSocketClose(ws) {

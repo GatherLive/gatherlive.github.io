@@ -18,10 +18,6 @@ export function createServicesSession(context: AppContext) {
             else localStorage.removeItem('gather.session');
         } catch { }
         scheduleRefresh();
-        if (previousUser !== (S.session?.user?.id || (S.session as import('../../shared/types.js').DataRecord)?.id || '') && S.learning) {
-            const learning = S.learning;
-            void Promise.resolve().then(() => S.learning === learning ? learning.sessionChanged() : null).catch(() => { });
-        }
     }
     function scheduleRefresh() {
         clearTimeout(sessionRefresh);

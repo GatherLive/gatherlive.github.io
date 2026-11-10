@@ -1,10 +1,7 @@
 import type {WorkerEnv} from '../env.js';
-import type {LearningProgress, ChatAccessState, RpcResult} from '../../shared/types.js';
+import type {ChatAccessState, RpcResult} from '../../shared/types.js';
 import {DurableObject} from 'cloudflare:workers';
 import {HttpError} from '../../shared/http/api.js';
-import {emptyLearningProgress} from '../../shared/learn/progress.js';
-import {mergeLearningProgress} from '../../shared/learn/progress.js';
-import {resetLearningProgress} from '../../shared/learn/progress.js';
 import {rpcFailure} from '../http/errors.js';
 import {REQUEST_PENDING_MS} from '../../shared/site/control.js';
 import {REQUEST_REVIEWED_MS} from '../../shared/site/control.js';
@@ -20,22 +17,6 @@ export class AccountRooms extends DurableObject<WorkerEnv> {
   declare accessEnv: WorkerEnv;
 
   constructor(ctx: DurableObjectState,env: WorkerEnv){super(ctx,env);this.ctx=ctx;this.accessEnv=env;ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping','pong'));ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS rooms(code TEXT PRIMARY KEY,expires INTEGER NOT NULL)');ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS closing(id INTEGER PRIMARY KEY,until_ms INTEGER NOT NULL)');}
-  learning(method,progress): RpcResult<{progress: LearningProgress}>{
-    try{
-      const sql=this.ctx.storage.sql;
-      const closing=sql.exec<{until_ms: number}>('SELECT until_ms FROM closing WHERE id=1').toArray()[0];
-      if(closing?.until_ms>Date.now())throw new HttpError(409,'Account deletion is in progress.');
-      sql.exec('CREATE TABLE IF NOT EXISTS learning_progress(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL)');
-      return this.ctx.storage.transactionSync(()=>{
-        const saved=sql.exec<{data: string}>('SELECT data FROM learning_progress WHERE id=1').toArray()[0];
-        const current=saved?JSON.parse(saved.data):emptyLearningProgress();
-        const next=method==='POST'?mergeLearningProgress(current,progress):method==='DELETE'?resetLearningProgress(current):current;
-        const data=JSON.stringify(next);
-        if(method!=='GET'&&data!==saved?.data)sql.exec('INSERT OR REPLACE INTO learning_progress(id,data) VALUES(1,?)',data);
-        return {ok:true,progress:next};
-      });
-    }catch(error){return {...rpcFailure(error),...(error.status===409&&error.progress?{progress:error.progress}:{})};}
-  }
   applicationTables(){
     const sql=this.ctx.storage.sql;
     sql.exec('CREATE TABLE IF NOT EXISTS chat_applications(owner_key TEXT PRIMARY KEY,user_id TEXT NOT NULL,email TEXT NOT NULL,status TEXT NOT NULL,updated INTEGER NOT NULL,data TEXT NOT NULL)');

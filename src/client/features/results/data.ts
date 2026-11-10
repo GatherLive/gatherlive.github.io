@@ -1,3 +1,4 @@
+import {pinRegion} from '../../core/pin-regions.js';
 /** Pure report calculations, shared by the host view and every export. */
 export const OPINION_TYPES = new Set(['poll','open_ended','word_cloud','slide']);
 export const typeLabel = type => ({single:'Multiple choice',multi:'Multiple answers',true_false:'True or false',short_answer:'Type an answer',poll:'Poll',order:'Order',slider:'Number',word_cloud:'Word cloud',open_ended:'Open response',pin:'Pin on image',slide:'Slide'}[type]||type);
@@ -21,6 +22,7 @@ export function answerText(q,answer){
 export function correctText(q){
   if(OPINION_TYPES.has(q.type))return 'Not graded';
   if(q.acceptedAnswers)return q.acceptedAnswers.join(' / ');
+  if(q.type==='pin')return 'Inside the '+(pinRegion(q).shape==='box'?'box':'circle');
   if(q.target!=null)return answerText(q,q.target)+(q.type==='slider'?` (±${q.tolerance||0})`:` (within ${Math.round((q.tolerance||0)*100)}% of image width)`);
   return answerText(q,q.correct);
 }

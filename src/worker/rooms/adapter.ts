@@ -1,4 +1,5 @@
 import type {WorkerEnv} from '../env.js';
+import {poolCode} from '../../shared/rooms/pool.js';
 import {SITE_CONTROL_REGISTRY} from '../../shared/site/control.js';
 import {CHAT_ACCESS_REGISTRY} from '../../shared/chat/access.js';
 import {chatOwnerKey} from '../../shared/chat/access.js';
@@ -17,11 +18,6 @@ export function roomAdapter(env: WorkerEnv){return {
     if(result?.ok!==true)throw new HttpError(result?.status||503,result?.message||'Chat applications are temporarily unavailable.');
     return {unlocked:result.unlocked,application:result.application};
   },
-  async learning(ownerId,method,progress){
-    const result=await env.ACCOUNTS.getByName(ownerId).learning(method,progress);
-    if(result?.ok!==true){const error=new HttpError(result?.status||503,result?.message||'Learning sync is temporarily unavailable.');if(result?.progress)error.progress=result.progress;throw error;}
-    return result.progress;
-  },
   async chatAccess(ownerId){
     if(!env.CHAT_CODE_PEPPER)return false;
     const access=await env.ACCOUNTS.getByName(CHAT_ACCESS_REGISTRY).getChatAccess(await chatOwnerKey(env,ownerId));
@@ -34,10 +30,7 @@ export function roomAdapter(env: WorkerEnv){return {
   },
   async create(data){
     for(let attempt=0;attempt<12;attempt++){
-      const number=crypto.getRandomValues(new Uint32Array(1))[0];
-      // Rejection sampling keeps all six-digit codes equally likely.
-      if(number>=4_294_800_000){attempt--;continue;}
-      const code=String(100000+number%900000);
+      const code=poolCode(env);
       if(unwrapRpc(await env.ROOMS.getByName(code).create({...data,code}),'created')){
         try{if(!await env.ACCOUNTS.getByName(data.ownerId).add(code,Date.now()+LIFETIME))throw new HttpError(409,'Account deletion is in progress. Please retry in two minutes if you kept your account.');}
         catch(error){await env.ROOMS.getByName(code).purge(data.ownerId);throw error;}

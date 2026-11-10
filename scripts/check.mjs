@@ -8,7 +8,7 @@ const {RoomEngine}=await tsImport('../src/shared/quiz/engine.ts',import.meta.url
 async function checkDirectory(directory){
  for(const entry of await readdir(directory,{withFileTypes:true})){
   if(entry.isDirectory()){
-   if(!['vendor','node_modules','learn-data'].includes(entry.name))await checkDirectory(directory+'/'+entry.name);
+   if(!['vendor','node_modules'].includes(entry.name))await checkDirectory(directory+'/'+entry.name);
    continue;
   }
   if(!/\.(?:js|mjs)$/.test(entry.name))continue;
@@ -20,7 +20,7 @@ const types=spawnSync('npm',['run','typecheck'],{stdio:'inherit'});if(types.stat
 for(const directory of ['public','scripts'])await checkDirectory(directory);
 async function checkReferences(directory){
  for(const entry of await readdir(directory,{withFileTypes:true})){
-  if(['vendor','learn-data'].includes(entry.name))continue;
+  if(['vendor'].includes(entry.name))continue;
   const file=directory+'/'+entry.name;
   if(entry.isDirectory()){await checkReferences(file);continue;}
   if(!/\.(?:js|mjs|css)$/.test(file))continue;

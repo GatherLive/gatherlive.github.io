@@ -8,7 +8,7 @@ const ignoredFile=name=>/^run\/(?:publish\.mjs|chat-codes\.mjs|README\.md)$/.tes
 // Include the documented .env setup and environment overrides as well as the
 // ignored local checkout settings. Never print the values being checked.
 const configured=await loadConfig();
-const privateValues=['SUPABASE_URL','SUPABASE_PUBLISHABLE_KEY','SUPABASE_SERVICE_ROLE_KEY','SUPABASE_ACCESS_TOKEN','CLOUDFLARE_ACCOUNT_ID','CLOUDFLARE_API_TOKEN','GATHER_DO_SCRIPT','PUBLIC_API_URL','CHAT_CODE_PEPPER','CHAT_CODE_HASHES'].map(key=>configured[key]).filter(value=>typeof value==='string'&&value.length>=12&&!/YOUR_|REPLACE_|EXAMPLE_/i.test(value));
+const privateValues=['SUPABASE_URL','SUPABASE_PUBLISHABLE_KEY','SUPABASE_SERVICE_ROLE_KEY','SUPABASE_ACCESS_TOKEN','CLOUDFLARE_ACCOUNT_ID','CLOUDFLARE_API_TOKEN','GATHER_DO_SCRIPT','PUBLIC_API_URL','CHAT_CODE_PEPPER','CHAT_CODE_HASHES','ROOM_POOL_KEY'].map(key=>configured[key]).filter(value=>typeof value==='string'&&value.length>=12&&!/YOUR_|REPLACE_|EXAMPLE_/i.test(value));
 try{for(const code of (await readFile(resolve(projectRoot,'.local/chat-access-codes.txt'),'utf8')).split(/\s+/))if(/^\d{12}$/.test(code))privateValues.push(code);}catch(error){if(error.code!=='ENOENT')throw error;}
 try{for(const hash of JSON.parse(configured.CHAT_CODE_HASHES||'[]'))if(typeof hash==='string'&&hash.length===64)privateValues.push(hash);}catch{}
 const projectId=configured.SUPABASE_URL?.match(/https:\/\/([a-z0-9]{20})\.supabase\.co/)?.[1];if(projectId)privateValues.push(projectId);

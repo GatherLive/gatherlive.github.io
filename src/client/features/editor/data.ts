@@ -1,6 +1,7 @@
 import type {AppContext} from '../../app/context.js';
 import { quizTags } from '../../core/tags.js';
 import { $, uid } from '../../core/dom.js';
+import {optimizeQuizImage} from '../media/optimize.js';
 export function createFeaturesEditorData(context: AppContext) {
     const S = context.state;
     const renderEditor = (...args) => context.renderEditor(...args);
@@ -82,7 +83,8 @@ export function createFeaturesEditorData(context: AppContext) {
         if (file.size > 3 * 1024 * 1024)
             throw new Error('Keep your image under 3 MB.');
         const q = S.draft.questions[S.questionIndex], draftId = S.draft.id;
-        const result=await request(context.apiURL('/api/account/images'),{method:'POST',headers:{Authorization:'Bearer '+await getToken(),'Content-Type':file.type},body:file});
+        const upload = await optimizeQuizImage(file);
+        const result=await request(context.apiURL('/api/account/images'),{method:'POST',headers:{Authorization:'Bearer '+await getToken(),'Content-Type':upload.type},body:upload});
         const url=result.url; S.accountUsage=null;
         if (S.draft?.id !== draftId)
             return;

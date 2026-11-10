@@ -3,6 +3,7 @@ export type QuestionType = 'single' | 'multi' | 'true_false' | 'short_answer' | 
 export type RoomPhase = 'lobby' | 'countdown' | 'question' | 'results' | 'reveal' | 'round_results' | 'finished';
 export type ChatMode = 'off' | 'lobby' | 'breaks' | 'rounds';
 export interface Point { x: number; y: number }
+export interface AnswerRegion extends Point { shape: 'circle' | 'box'; width: number; height: number }
 export type AnswerValue = string | string[] | number | Point;
 export interface QuizOption { id: string; text: string; image?: string }
 export interface Question {
@@ -10,6 +11,7 @@ export interface Question {
   timeLimit: number; points: number; explanation?: string;
   options?: QuizOption[]; correct?: string[]; acceptedAnswers?: string[];
   min?: number; max?: number; target?: number | Point; tolerance?: number;
+  answerRegion?: AnswerRegion;
 }
 export interface QuizRound { id: string; title: string; reward: string; questionIds: string[] }
 export interface ChatSettings { chatMode: ChatMode; chatReplies: boolean; chatReactions: boolean; chatMentions: boolean }
@@ -18,6 +20,7 @@ export interface GameSettings extends ChatSettings {
   scoring: 'speed' | 'accuracy'; allowLateJoin: boolean; showLeaderboard: boolean;
   showQuestionType: boolean; showAnswerOptions: boolean; participantLimit: number;
   questionDelay: number; roundsEnabled: boolean; rounds: QuizRound[]; tags?: string[];
+  joinVerification?: boolean;
 }
 export interface Quiz {
   id?: string; owner_id?: string; title: string; description?: string;
@@ -48,6 +51,7 @@ export interface RoomIdentity {
   superseded?: boolean; authenticating?: boolean; acceptedAt?: number;
   mediaReadyToken?: string; chatWindowStart?: number; chatMessages?: number;
   windowStart?: number; messages?: number;
+  rateErrorAt?: number; rateErrors?: number;
 }
 export interface Mention { id: string; start: number; end: number; name?: string }
 export interface ChatMember { id: string; name: string; role: 'host' | 'player' | 'all' }
@@ -60,20 +64,13 @@ export interface ChatMessage {
   reactions: Record<string, string | number>; myReaction?: string; deleted?: boolean;
 }
 export interface ChatMetadata extends ChatSettings { unlocked: boolean; open: boolean; revision: number }
-export interface LearningTest { id: string; topic: string; region: string; total: number; correct: number; at: number }
-export interface LearningDevice { items: Record<string, number[]> }
-export interface LearningItem { seen: number; correct: number; wrong: number; lastCorrect: number; lastWrong: number; updatedAt: number; streak?: number; nextReviewAt?: number }
-export interface LearningProgress {
-  version: number; generation: number; updatedAt: number; devices: Record<string, LearningDevice>;
-  tests: LearningTest[]; items?: Record<string, LearningItem>; _writer?: string;
-}
 export interface UsageLimits { images: number; quizzes: number; results: number; participants: number }
 export interface AccountUser { id: string; email?: string }
 export interface AccountSession { access_token: string; refresh_token: string; expires_at?: number; user: AccountUser }
 export interface PublicConfig { apiUrl?: string; supabaseUrl?: string; supabaseKey?: string; turnstileSiteKey?: string }
 export interface ChatApplicationStatus { status: string; createdAt: number; updatedAt: number; retryAt?: number }
 export interface ChatAccessState { unlocked: boolean; application: ChatApplicationStatus | null }
-export type RpcResult<T extends object> = ({ok: true} & T) | {ok: false; status: number; message: string; progress?: LearningProgress};
+export type RpcResult<T extends object> = ({ok: true} & T) | {ok: false; status: number; message: string};
 
 /** Legacy or provider JSON is validated at its existing boundary before use. */
 export type DataRecord = Record<string, any>;

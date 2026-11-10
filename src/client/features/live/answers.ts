@@ -1,6 +1,7 @@
 import type {AppContext} from '../../app/context.js';
 import { icon } from '../../core/icons.js';
 import { $, $$, safeImage, esc } from '../../core/dom.js';
+import {pinRegion, pinRegionDot, pinRegionSvg} from '../../core/pin-regions.js';
 export function createFeaturesLiveAnswers(context: AppContext) {
     const S = context.state;
     const send = (...args) => context.send(...args);
@@ -67,8 +68,8 @@ export function createFeaturesLiveAnswers(context: AppContext) {
         return `<div class="range-answer"><output id="slider-output">${esc(v)}</output><input type="range" min="${q.min}" max="${q.max}" step="${(q.max - q.min) < 10 ? .1 : 1}" value="${v}" id="player-slider" aria-label="Your number" ${!answerable ? 'disabled' : ''}><div class="range-labels"><span>${q.min}</span><span>${q.max}</span></div>${answerable ? '<button class="btn primary" data-action="submit-slider">Submit</button>' : ''}</div>`;
     }
     function pinView(q, st, isHost, answerable) {
-        const target = st.phase === 'reveal' ? st.reveal?.target : S.pin;
-        return `<div class="pin-area" ${answerable ? 'id="player-pin"' : ''}>${roomImage(q.image, 'pin-question-image', answerable ? 'Tap to choose your location' : 'Question image')}${target && typeof target === 'object' ? `<span class="pin-dot ${st.phase === 'reveal' ? 'target' : ''}" style="left:${target.x * 100}%;top:${target.y * 100}%"></span>` : ''}</div>${answerable ? `<div style="margin-top:20px"><button class="btn primary" data-action="submit-pin" ${!S.pin ? 'disabled' : ''}>Submit</button></div>` : ''}`;
+        const revealed = st.phase === 'reveal', target = isHost ? null : revealed ? st.me?.answer || S.pin : S.pin;
+        return `<div class="pin-area" ${answerable ? 'id="player-pin"' : ''}>${roomImage(q.image, 'pin-question-image', answerable ? 'Tap to choose your location' : 'Question image')}${revealed ? pinRegionSvg(q) + pinRegionDot(q) : ''}${target && typeof target === 'object' ? `<span class="pin-dot pin-response ${revealed ? st.me?.correct ? 'target' : 'wrong' : ''}" style="left:${target.x * 100}%;top:${target.y * 100}%" aria-label="Your pin"></span>` : ''}</div>${revealed ? `<p class="pin-region-caption">Correct area · inside the ${pinRegion(q).shape === 'box' ? 'box' : 'circle'}</p>` : ''}${answerable ? `<div style="margin-top:20px"><button class="btn primary" data-action="submit-pin" ${!S.pin ? 'disabled' : ''}>Submit</button></div>` : ''}`;
     }
     function textAnswerView(q, st, isHost, answerable) {
         if (isHost)

@@ -1,6 +1,8 @@
+import {makeJoinCode,sameJoinCode,JOIN_CODE_PERIOD} from '../rooms/join-verification.js';
 import type {Quiz, Question, GameSettings, RoomPhase, RoomPlayer, RoomIdentity, Standing, RoundResult, ImageAsset, MediaGate, DataRecord} from '../types.js';
 import {createImagePlan, imageSource} from '../media/room-media.js';
 import {RoomConversation,chatSettings,CONVERSATION_COMMANDS} from '../chat/conversation.js';
+import {validPinRegion,pinInside,pinRegion} from '../../client/core/pin-regions.js';
 /** Server-authoritative, transport-independent live quiz engine. */
 export class EngineError extends Error {
   declare code: string;
@@ -111,8 +113,15 @@ export function validateQuiz(input) {
     }
     if (type === 'pin') {
       if (!q.image) fail('INVALID_QUIZ', 'A pin question needs an image.');
-      q.target = { x: finite(raw.target?.x, 0.5, 0, 1, 'Pin X'), y: finite(raw.target?.y, 0.5, 0, 1, 'Pin Y') };
-      q.tolerance = finite(raw.tolerance, 0.1, 0.001, 1.5, 'Pin tolerance');
+      if (raw.answerRegion != null) {
+        if (!validPinRegion(raw.answerRegion)) fail('INVALID_QUIZ', 'Choose a valid correct area.');
+        const {shape, x, y, width, height} = raw.answerRegion;
+        q.answerRegion = {shape, x, y, width, height};
+        q.target = {x, y};
+      }else{
+        q.target = { x: finite(raw.target?.x, 0.5, 0, 1, 'Pin X'), y: finite(raw.target?.y, 0.5, 0, 1, 'Pin Y') };
+        q.tolerance = finite(raw.tolerance, 0.1, 0.001, 1.5, 'Pin tolerance');
+      }
     }
     return q;
   });
@@ -164,7 +173,7 @@ function settingsFrom(raw: Partial<GameSettings> = {}, questions: Question[] = [
     }
     if (assigned.size !== questions.length) fail('INVALID_SETTINGS', 'Assign each question to exactly one round.');
   }
-  return { shuffleQuestions: boolean('shuffleQuestions', false), shuffleOptions: boolean('shuffleOptions', false), shuffleTrueFalse: boolean('shuffleTrueFalse', false), scoring, allowLateJoin: boolean('allowLateJoin', true), showLeaderboard: boolean('showLeaderboard', true), showQuestionType: boolean('showQuestionType', false), showAnswerOptions: boolean('showAnswerOptions', true), participantLimit, questionDelay, roundsEnabled, rounds, ...chatSettings(raw) };
+  return { joinVerification: boolean('joinVerification', false), shuffleQuestions: boolean('shuffleQuestions', false), shuffleOptions: boolean('shuffleOptions', false), shuffleTrueFalse: boolean('shuffleTrueFalse', false), scoring, allowLateJoin: boolean('allowLateJoin', true), showLeaderboard: boolean('showLeaderboard', true), showQuestionType: boolean('showQuestionType', false), showAnswerOptions: boolean('showAnswerOptions', true), participantLimit, questionDelay, roundsEnabled, rounds, ...chatSettings(raw) };
 }
 
 export class RoomEngine {
@@ -199,6 +208,8 @@ export class RoomEngine {
   declare draws: DataRecord[];
   declare _images: Map<string, ImageAsset>;
   declare mediaHost: boolean;
+  declare joinVerificationSecret: string;
+  declare joinVerificationKey: CryptoKey | null;
 
   constructor({ code, ownerId, quiz, settings, mediaOrigin, capacityLimit=500 }: {code?: string; ownerId?: string; quiz?: Quiz; settings?: Partial<GameSettings>; mediaOrigin?: string; capacityLimit?: number} = {}, savedState = null, { now = () => Date.now() } = {}) {
     this.now = now;
@@ -212,6 +223,7 @@ export class RoomEngine {
     if(!Number.isSafeInteger(capacityLimit)||capacityLimit<1||capacityLimit>1000000)fail('INVALID_SETTINGS','Account participant limit is invalid.');
     this.capacityLimit=capacityLimit;
     this.settings.participantLimit=this.settings.participantLimit===0?capacityLimit:Math.min(this.settings.participantLimit,capacityLimit);
+    this.joinVerificationSecret = token();this.joinVerificationKey = null;
     this.chatUnlocked = false;
     this.conversation = new RoomConversation(this.settings);
     if (this.settings.roundsEnabled) {
@@ -248,6 +260,8 @@ export class RoomEngine {
   static restore(savedState, options = {}) { return new RoomEngine({}, savedState, options); }
   _restore(raw) {
     if (!raw || raw.version !== 1) fail('INVALID_STATE', 'Saved room version is unsupported.');
+    this.joinVerificationSecret = /^[a-f0-9]{64}$/.test(raw.joinVerificationSecret || '') ? raw.joinVerificationSecret : token();
+    this.joinVerificationKey = null;
     this.code = raw.code;
     this.ownerId = raw.ownerId;
     this.quiz = validateQuiz(raw.quiz);
@@ -281,7 +295,7 @@ export class RoomEngine {
     if(this.phase==='finished')this.conversation.end();
   }
   serialize({ includePlayers = true, includeConversation = true } = {}) {
-    return clone({ version: 1, code: this.code, ownerId: this.ownerId, capacityLimit: this.capacityLimit, chatUnlocked: this.chatUnlocked, quiz: this.quiz, imagePlan: this.imagePlan, mediaGate:this.mediaGate, settings: this.settings, ...(includeConversation?{conversation:this.conversation.serialize()}:{}), phase: this.phase, questionIndex: this.questionIndex, roundIndex: this.roundIndex, roundResults: this.roundResults, startedAt: this.startedAt, finishedAt: this.finishedAt, questionTimings: this.questionTimings, deadline: this.deadline, createdAt: this.createdAt, updatedAt: this.updatedAt, locked: this.locked, players: includePlayers ? [...this.players.values()] : [], winners: this.winners, drawnPlayerIds: [...this.drawnPlayerIds], draws: this.draws });
+    return clone({ version: 1, code: this.code, joinVerificationSecret: this.joinVerificationSecret, ownerId: this.ownerId, capacityLimit: this.capacityLimit, chatUnlocked: this.chatUnlocked, quiz: this.quiz, imagePlan: this.imagePlan, mediaGate:this.mediaGate, settings: this.settings, ...(includeConversation?{conversation:this.conversation.serialize()}:{}), phase: this.phase, questionIndex: this.questionIndex, roundIndex: this.roundIndex, roundResults: this.roundResults, startedAt: this.startedAt, finishedAt: this.finishedAt, questionTimings: this.questionTimings, deadline: this.deadline, createdAt: this.createdAt, updatedAt: this.updatedAt, locked: this.locked, players: includePlayers ? [...this.players.values()] : [], winners: this.winners, drawnPlayerIds: [...this.drawnPlayerIds], draws: this.draws });
   }
   _indexImages() { this._images = new Map(this.imagePlan.map(asset => [imageSource(this.quiz.questions,asset),asset])); }
   authorizeChat({enable=true}={}) {
@@ -294,7 +308,12 @@ export class RoomEngine {
     this.chatUnlocked=false;this.conversation.unlocked=false;this.conversation.config.chatMode='off';
     this.conversation.messages=[];this.conversation.revision++;
   }
-  imageManifest() { return this.imagePlan.filter(asset=>!this.imageReleased(asset)).map(asset => asset.id); }
+  imageManifest() {
+    // Prefetch ciphertext for nearby questions, rather than downloading a long
+    // quiz that a participant may never finish. Keys still wait for opening.
+    const last = Math.max(1, this.questionIndex + 2);
+    return this.imagePlan.filter(asset=>!this.imageReleased(asset)&&asset.question<=last).map(asset => asset.id);
+  }
   imageReleased(asset) { return asset.question < this.questionIndex || (asset.question === this.questionIndex && this.startedAt != null && this.phase !== 'countdown' && this.phase !== 'lobby'); }
   serializePlayer(playerId) { const player = this.players.get(playerId); return player ? clone(player) : null; }
   restorePlayer(raw) {
@@ -336,6 +355,20 @@ export class RoomEngine {
     if (!this.settings.roundsEnabled) return null;
     const round = this.settings.rounds[this.roundIndex];
     return { index: this.roundIndex, total: this.settings.rounds.length, id: round.id, title: round.title, reward: round.reward, questionIndex: Math.max(0, this.questionIndex - this._roundStartIndex()), questionCount: round.questionIds.length };
+  }
+  async joinChallenge() {
+    if (!this.joinVerificationKey) this.joinVerificationKey = await crypto.subtle.importKey('raw', Uint8Array.from(this.joinVerificationSecret.match(/../g), value => parseInt(value, 16)), {name: 'HMAC', hash: 'SHA-256'}, false, ['sign']);
+    return makeJoinCode(this.joinVerificationKey, this.code, this.now());
+  }
+  async verifyJoin(code) {
+    if (!this.settings.joinVerification) return;
+    if (code == null || code === '') fail('JOIN_VERIFICATION_REQUIRED', 'Enter the verification code shown by your host.');
+    if (typeof code !== 'string' || !/^\d{6}$/.test(code)) fail('JOIN_VERIFICATION_FAILED', 'Enter the current verification code from your host.');
+    const now = this.now(), current = await this.joinChallenge();
+    if (sameJoinCode(code, current.code)) return;
+    // Let a code being typed finish briefly across its rotation boundary.
+    if (now % JOIN_CODE_PERIOD < 5000 && sameJoinCode(code, (await makeJoinCode(this.joinVerificationKey, this.code, now - JOIN_CODE_PERIOD)).code)) return;
+    fail(code == null || code === '' ? 'JOIN_VERIFICATION_REQUIRED' : 'JOIN_VERIFICATION_FAILED', 'Enter the current verification code from your host.');
   }
   addPlayer(name, playerId = null, resumeToken = null) {
     this.tick();
@@ -388,6 +421,11 @@ export class RoomEngine {
     if (identity?.role !== 'host' || (identity.userId != null && identity.userId !== this.ownerId)) fail('FORBIDDEN', 'Only the host can control the quiz.');
     this.mediaHost=identity.mediaVersion===2;
     switch (message.type) {
+      case 'room_settings':
+        if (this.phase !== 'lobby') fail('INVALID_PHASE', 'Change join verification before starting the quiz.');
+        if (typeof message.joinVerification !== 'boolean') fail('INVALID_SETTINGS', 'Choose whether join verification is enabled.');
+        this.settings.joinVerification = message.joinVerification;this._touch();
+        return {type: 'room_settings_updated', joinVerification: this.settings.joinVerification};
       case 'start':
         if (this.phase !== 'lobby') fail('INVALID_PHASE', 'This quiz has already started.');
         this._queueQuestion(0);
@@ -533,7 +571,7 @@ export class RoomEngine {
     if (q.type === 'order') return answer.every((id, index) => id === q.correct[index]);
     if (q.type === 'short_answer') return q.acceptedAnswers.some((value) => normalized(value) === normalized(answer));
     if (q.type === 'slider') return Math.abs(answer - q.target) <= q.tolerance + Number.EPSILON * Math.max(1, Math.abs(q.target));
-    if (q.type === 'pin') return Math.hypot(answer.x - q.target.x, answer.y - q.target.y) <= q.tolerance;
+    if (q.type === 'pin') return pinInside(pinRegion(q), answer);
     return false;
   }
   _reveal() {
@@ -601,9 +639,9 @@ export class RoomEngine {
     const revealed = this.startedAt != null && (this.phase === 'reveal' || this.phase === 'finished');
     let question = null;
     if (q && this.startedAt != null && ['question', 'reveal', 'finished'].includes(this.phase)) {
-      const { correct, acceptedAnswers, target, explanation, tolerance, ...publicQuestion } = q;
+      const { correct, acceptedAnswers, target, explanation, tolerance, answerRegion, ...publicQuestion } = q;
       question = clone(publicQuestion);
-      if (revealed) Object.assign(question, clone({ ...(correct ? { correct } : {}), ...(acceptedAnswers ? { acceptedAnswers } : {}), ...(target != null ? { target } : {}), ...(tolerance != null ? { tolerance } : {}), explanation }));
+      if (revealed) Object.assign(question, clone({ ...(correct ? { correct } : {}), ...(acceptedAnswers ? { acceptedAnswers } : {}), ...(target != null ? { target } : {}), ...(tolerance != null ? { tolerance } : {}), ...(answerRegion ? {answerRegion} : {}), explanation }));
     }
     if (question && !forHost && !revealed && !this.settings.showAnswerOptions && ['single','multi','true_false','poll'].includes(q.type)) {
       question.options = question.options.map(option => ({id:option.id,text:'',image:''}));
@@ -663,7 +701,7 @@ export class RoomEngine {
     }
     // Bound public opinion summaries; the owner's final report retains every response.
     const summaryDistribution = q.type === 'word_cloud' ? Object.fromEntries(Object.entries(distribution).sort((a, b) => b[1] - a[1]).slice(0, 100)) : distribution;
-    this._publicReveal = { ...(q.correct ? { correct: [...q.correct] } : {}), ...(q.acceptedAnswers ? { acceptedAnswers: [...q.acceptedAnswers] } : {}), ...(q.target != null ? { target: clone(q.target) } : {}), ...(q.tolerance != null ? { tolerance: q.tolerance } : {}), explanation: q.explanation, distribution: summaryDistribution, responses, responseCount };
+    this._publicReveal = { ...(q.correct ? { correct: [...q.correct] } : {}), ...(q.acceptedAnswers ? { acceptedAnswers: [...q.acceptedAnswers] } : {}), ...(q.target != null ? { target: clone(q.target) } : {}), ...(q.tolerance != null ? { tolerance: q.tolerance } : {}), ...(q.answerRegion ? {answerRegion: clone(q.answerRegion)} : {}), explanation: q.explanation, distribution: summaryDistribution, responses, responseCount };
     return this._publicReveal;
   }
   /** Call only from an authenticated owner endpoint. Reports contain player answers. */

@@ -7,7 +7,7 @@ export function createFeaturesEditorEvents(context: AppContext) {
     function onInput(event) {
         const el = event.target;
         if (!S.draft)
-            return true;
+            return false;
         if (el.dataset.rfield) {
             const round = S.draft.settings.rounds.find(r => r.id === el.dataset.roundId);
             if (round) {
@@ -26,7 +26,7 @@ export function createFeaturesEditorEvents(context: AppContext) {
         }
         const q = S.draft.questions[S.questionIndex];
         if (!q)
-            return true;
+            return false;
         if (el.dataset.qfield && el.dataset.qfield !== 'type') {
             const key = el.dataset.qfield;
             q[key] = key === 'acceptedAnswers' ? el.value.split('\n').map(s => s.trim()).filter(Boolean) : ['min', 'max', 'target', 'tolerance', 'timeLimit', 'points'].includes(key) ? Number(el.value) : el.value;
@@ -43,10 +43,6 @@ export function createFeaturesEditorEvents(context: AppContext) {
                 option[el.dataset.ofield] = el.value;
                 markDirty();
             }
-        }
-        if (el.hasAttribute('data-pin-tolerance')) {
-            q.tolerance = Number(el.value) / 100;
-            markDirty();
         }
         return false;
     }

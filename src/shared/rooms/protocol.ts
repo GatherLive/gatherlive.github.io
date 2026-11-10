@@ -8,7 +8,7 @@ export function decodeMessage(raw) {
   if (!message || typeof message !== 'object' || Array.isArray(message) || typeof message.type !== 'string') throw new HttpError(400,'Invalid message.');
   return message;
 }
-export async function authorize(engine,meta,env,message): Promise<{identity: RoomIdentity; welcome: DataRecord; chatUnlocked?: boolean}> {
+export async function authorize(engine,meta,env,message,verification?: {check: () => Promise<boolean> | boolean; failed: () => Promise<unknown> | unknown}): Promise<{identity: RoomIdentity; welcome: DataRecord; chatUnlocked?: boolean}> {
   if (message.type !== 'auth') throw new HttpError(401,'Join the room first.');
   const conversation=message.conversationVersion===1?{conversationVersion:1,chatSubscribed:message.chatSubscribed!==false}:{};
   if (message.role === 'host') {
@@ -19,12 +19,33 @@ export async function authorize(engine,meta,env,message): Promise<{identity: Roo
   }
   if(message.contact_url_confirm!=null&&message.contact_url_confirm!=='')throw new HttpError(400,'This room is not available. Please try again.');
   if (message.role !== 'player') throw new HttpError(400,'Choose host or player.');
+  if (message.playerId == null && message.resumeToken == null) {
+    if (engine.settings.joinVerification && message.verificationCode && verification && !await verification.check()) throw new HttpError(429, 'Too many verification attempts. Wait a minute and retry.');
+    try {await engine.verifyJoin(message.verificationCode);}
+    catch (error) {if (error.code === 'JOIN_VERIFICATION_FAILED') await verification?.failed();throw error;}
+  }
   const result=engine.addPlayer(message.name,message.playerId,message.resumeToken);
   engine.registerMedia(result.playerId,message.mediaVersion);
   return {identity:{role:'player',playerId:result.playerId,...conversation,...([1,2].includes(message.mediaVersion)?{mediaVersion:message.mediaVersion}:{})},welcome:{type:'welcome',role:'player',...result,...([1,2].includes(message.mediaVersion)?{imageManifest:engine.imageManifest()}:{})}};
 }
 export function safeError(error) {
-  return {type:'error',message:error.status || error.name === 'EngineError' ? error.message : 'The room could not complete that action. Please retry.'};
+  return {type:'error',...(error.name === 'EngineError' ? {code: error.code} : {}),message:error.status || error.name === 'EngineError' ? error.message : 'The room could not complete that action. Please retry.'};
+}
+/** Share expensive public state construction, keeping each participant's answer separate. */
+export function snapshotBatch(engine, encoded = false) {
+  const cache = new Map<string, DataRecord>();
+  const messages = new Map<string,string>();
+  return (identity: RoomIdentity) => {
+    const key = `${identity.role === 'host'}:${identity.mediaVersion || 0}:${identity.conversationVersion === 1}`;
+    let common = cache.get(key);
+    if (!common) {common = engine.snapshot(identity.role === 'host', null, {media: identity.mediaVersion || false, conversation: identity.conversationVersion === 1});common.role=identity.role==='host'?'host':'player';cache.set(key, common);}
+    const me = engine._me(identity.playerId);
+    if(encoded){
+      let text=messages.get(key);if(!text){text=JSON.stringify({type:'state',state:common});messages.set(key,text);}
+      return me?text.slice(0,-2)+',"me":'+JSON.stringify(me)+'}}':text;
+    }
+    return {...common, role: identity.role === 'host' ? 'host' : 'player', ...(me ? {me} : {})};
+  };
 }
 export function allowMessage(identity,now=Date.now(),type='') {
   // Chat spam must not consume a participant's answer allowance.
@@ -33,4 +54,8 @@ export function allowMessage(identity,now=Date.now(),type='') {
   if (now-windowStart >= 1000) {identity[windowKey]=now;identity[countKey]=1;return true;}
   identity[windowKey]=windowStart;identity[countKey]=(identity[countKey] || 0)+1;
   return identity[countKey] <= (identity.role === 'host' ? 25 : social?5:8);
+}
+export function repeatedFlood(identity,now=Date.now()) {
+  if(now-(identity.rateErrorAt||0)>=1000){identity.rateErrorAt=now;identity.rateErrors=0;}
+  return (identity.rateErrors=(identity.rateErrors||0)+1)>=3;
 }

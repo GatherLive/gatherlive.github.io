@@ -5,7 +5,6 @@ export function createAppStartup(context: AppContext) {
     const request = (...args) => context.request(...args);
     const authRequest = (...args) => context.authRequest(...args);
     const saveSession = (...args) => context.saveSession(...args);
-    const learningReturn = (...args) => context.learningReturn(...args);
     const refreshToken = (...args) => context.refreshToken(...args);
     const scheduleRefresh = (...args) => context.scheduleRefresh(...args);
     const route = (...args) => context.route(...args);
@@ -40,7 +39,7 @@ export function createAppStartup(context: AppContext) {
                 const token = hash.get('access_token'), user = await authRequest('user', null, 'GET', token);
                 saveSession({ access_token: token, refresh_token: hash.get('refresh_token'), expires_at: Math.floor(Date.now() / 1000) + Number(hash.get('expires_in') || 3600), user });
                 const recovery = hash.get('type') === 'recovery';
-                history.replaceState(null, '', `${location.pathname}${location.search}${recovery ? '#reset' : learningReturn()}`);
+                history.replaceState(null, '', `${location.pathname}${location.search}${recovery ? '#reset' : '#dashboard'}`);
             }
             if (S.session) {
                 try {

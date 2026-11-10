@@ -10,9 +10,11 @@ export function createFeaturesJoinPage(context: AppContext) {
     function joinView(code = '') {
         let rememberedName = '';
         try { rememberedName = localStorage.getItem('gather.name') || ''; } catch { }
-        shell(`<main class="auth-layout join-layout"><section class="auth-card">${pageHeading('Join quiz')}<form id="join-form"><div class="field"><label for="join-code">Code</label><input id="join-code" class="code-input" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" placeholder="000000" value="${esc(code)}" required></div><div class="field"><label for="join-name">Name</label><input id="join-name" name="name" autocomplete="nickname" placeholder="Your name" maxlength="32" minlength="1" value="${esc(rememberedName)}" required></div>${honeypotField()}<div id="form-error" role="alert"></div><button type="submit" class="btn primary full">Join ${icon('arrow', 16)}</button></form></section><footer class="join-legal">${policyLinks({ newTab: true, returnTo: code.length === 6 ? '#join/' + code : '#join' })}</footer></main>`);
+        const verification = S.joinVerificationPrompt?.code === code ? S.joinVerificationPrompt : null;
+        if (verification) rememberedName = verification.name;
+        shell(`<main class="auth-layout join-layout"><section class="auth-card">${pageHeading('Join quiz')}<form id="join-form"><div class="field"><label for="join-code">Code</label><input id="join-code" class="code-input" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" placeholder="000000" value="${esc(code)}" required></div><div class="field"><label for="join-name">Name</label><input id="join-name" name="name" autocomplete="nickname" placeholder="Your name" maxlength="32" minlength="1" value="${esc(rememberedName)}" required></div>${verification ? `<div class="field"><label for="join-verification-code">Verification code</label><input class="code-input" id="join-verification-code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" placeholder="000000" required></div><p class="join-verification-hint">${esc(verification.message)}</p>` : ''}${honeypotField()}<div id="form-error" role="alert"></div><button type="submit" class="btn primary full">Join ${icon('arrow', 16)}</button></form></section><footer class="join-legal">${policyLinks({ newTab: true, returnTo: code.length === 6 ? '#join/' + code : '#join' })}</footer></main>`);
         if (code.length === 6)
-            setTimeout(() => $('#join-name')?.focus(), 50);
+            setTimeout(() => $(verification ? '#join-verification-code' : '#join-name')?.focus(), 50);
     }
     return { joinView };
 }

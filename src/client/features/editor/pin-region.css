@@ -1,0 +1,29 @@
+.pin-region{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:hidden}
+.pin-region-editor{touch-action:none;cursor:crosshair;outline-offset:5px;overflow:hidden;border-radius:12px;isolation:isolate}
+.pin-region-editor img{pointer-events:none;user-select:none;-webkit-user-drag:none}
+.pin-area-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:22px 0 10px}
+.pin-shapes{display:inline-flex;gap:4px;padding:4px;background:var(--surface-raised,#252525);border-radius:999px}
+.pin-shapes button{border:0;background:transparent;color:var(--muted);padding:8px 15px;border-radius:999px;font:inherit;font-size:14px;cursor:pointer}
+.pin-shapes button[aria-pressed=true]{background:var(--text);color:var(--bg);font-weight:550}
+.pin-region-note{margin:0 0 12px;font-size:14px;color:var(--muted)}
+.pin-region-caption{margin:10px 0 0;color:var(--soft);font-size:14px;text-align:center}
+.pin-region-controls{position:absolute;pointer-events:none;z-index:2}
+.pin-region-move{position:absolute;inset:0;pointer-events:auto;cursor:grab}
+.pin-region-controls[data-shape=circle] .pin-region-move{border-radius:50%}
+.pin-region-handle{position:absolute;width:36px;height:36px;transform:translate(-50%,-50%);pointer-events:auto;touch-action:none}
+.pin-region-handle:after{content:"";position:absolute;inset:12px;border-radius:3px;background:var(--accent);border:2px solid var(--bg);box-shadow:0 0 0 1px var(--accent)}
+.pin-region-handle[hidden]{display:none}
+.pin-region-handle[data-pin-resize=nw],.pin-region-handle[data-pin-resize=se]{cursor:nwse-resize}
+.pin-region-handle[data-pin-resize=ne],.pin-region-handle[data-pin-resize=sw]{cursor:nesw-resize}
+.pin-region-handle[data-pin-resize=n],.pin-region-handle[data-pin-resize=s]{cursor:ns-resize}
+.pin-region-handle[data-pin-resize=e],.pin-region-handle[data-pin-resize=w]{cursor:ew-resize}
+.pin-region-editor .pin-dot.pin-region-target{pointer-events:auto;cursor:grab;z-index:4}
+.pin-region-editor:active .pin-region-move,.pin-region-editor:active .pin-region-target{cursor:grabbing}
+.pin-size-control{width:100%;max-width:380px;margin-top:14px}
+.pin-size-control>label{display:block;color:var(--muted);font-size:13px;margin-bottom:4px}
+.pin-size-slider{display:flex;align-items:center;gap:12px}
+.pin-size-slider button{flex:none;display:grid;place-items:center;width:40px;height:40px;border:1px solid var(--line);border-radius:50%;background:none;color:var(--text);font:inherit;font-size:22px;cursor:pointer}
+.pin-size-slider input[type=range]{flex:1;min-width:0;width:100%;height:40px;margin:0;padding:0;border:0;background:transparent;accent-color:var(--accent);cursor:pointer}
+.pin-size-slider button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.pin-size-slider button:disabled{opacity:.4;cursor:default}
+@media(pointer:coarse){.pin-region-handle{width:44px;height:44px}.pin-region-handle:after{inset:16px}.pin-size-slider button{width:44px;height:44px}.pin-size-slider input[type=range]{height:44px}}

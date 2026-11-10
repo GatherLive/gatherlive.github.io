@@ -1,0 +1,6 @@
+.quiz-content-protected .live-question{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.quiz-content-protected .live-question img{-webkit-user-drag:none;user-select:none;-webkit-touch-callout:none}
+.quiz-content-protected .live-question input,.quiz-content-protected .live-question textarea,.quiz-content-protected .live-question [contenteditable=true]{user-select:text;-webkit-user-select:text;-webkit-touch-callout:default}
+.pin-dot.wrong{background:var(--red)}
+
+.pin-area .pin-dot.pin-response{z-index:3}

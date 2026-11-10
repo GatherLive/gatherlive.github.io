@@ -1,9 +1,4 @@
 {
-  "learn.js": "features/learn/index.js",
-  "learn.css": "features/learn/styles.css",
-  "learn-progress.js": "features/learn/progress.js",
-  "learn-map.js": "features/learn/map.js",
-  "learn-map.css": "features/learn/map.css",
   "results.js": "features/results/index.js",
   "results.css": "features/results/styles.css",
   "results-data.js": "features/results/data.js",

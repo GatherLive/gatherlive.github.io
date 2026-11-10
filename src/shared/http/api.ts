@@ -1,4 +1,3 @@
-import {LEARNING_MAX_BYTES} from '../learn/progress.js';
 import {accountApi,accountUsage} from '../account/api.js';
 import {effectiveParticipants} from '../account/usage.js';
 import {saveAccountReport} from '../account/reports.js';
@@ -6,7 +5,6 @@ import {saveAccountReport} from '../account/reports.js';
 export class HttpError extends Error {
   declare status: number;
   declare databaseCode?: string;
-  declare progress?: import('../types.js').LearningProgress;
 
   constructor(status, message) { super(message); this.status = status; }
 }
@@ -132,8 +130,8 @@ export async function handleApi(request, env, rooms) {
       }
       response=json({closed,failed});
     } else if (/^\/api\/rooms\/\d{6}$/.test(pathname) && request.method === 'GET') {
-      const available=await rooms.available(pathname.split('/')[3]);
-      response=available?json({available:true}):json({error:'Room is not available.'},404);
+      const discovery=rooms.discover?await rooms.discover(pathname.split('/')[3]):{available:await rooms.available(pathname.split('/')[3])};
+      response=discovery.available?json(discovery):json({error:'Room is not available.'},404);
     } else if (/^\/api\/rooms\/\d{6}$/.test(pathname) && request.method === 'DELETE') {
       const user=await authenticate(env,bearer(request)),code=pathname.split('/')[3],body=await readJson(request,1024);
       if(typeof body?.roomId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(body.roomId))throw new HttpError(400,'Refresh your rooms before closing one.');
@@ -147,10 +145,6 @@ export async function handleApi(request, env, rooms) {
       const report=await rooms.report(code,user.id);
       const body=request.body&&request.headers.get('Content-Length')!=='0'?await readJson(request,1024):{};
       response=json(await saveAccountReport(env,rooms,user,token,{...report,code},body));
-    } else if (pathname === '/api/account/learning' && ['GET','POST','DELETE'].includes(request.method)) {
-      const user=await authenticate(env,bearer(request));
-      const body=request.method==='POST'?await readJson(request,LEARNING_MAX_BYTES+1024):null;
-      response=json({progress:await rooms.learning(user.id,request.method,body?.progress)});
     } else if (pathname === '/api/account/chat' && ['GET','POST'].includes(request.method)) {
       const user=await authenticate(env,bearer(request));
       if(request.method==='POST'){
@@ -170,6 +164,6 @@ export async function handleApi(request, env, rooms) {
   } catch (error) {
     const status=error.status || (error.name === 'EngineError' ? 400 : 500);
     if (status >= 500) console.error(JSON.stringify({event:'api_error',status,name:error.name}));
-    return responseHeaders(request,env,json({error:status >= 500 && !error.status ? 'Something went wrong. Please retry.' : error.message,...(status===409&&error.progress?{progress:error.progress}:{})},status));
+    return responseHeaders(request,env,json({error:status >= 500 && !error.status ? 'Something went wrong. Please retry.' : error.message},status));
   }
 }

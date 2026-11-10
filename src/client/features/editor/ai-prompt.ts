@@ -18,7 +18,7 @@ Question rules:
 - order: list options in their correct order; correct lists every option ID in that same order. Gather shuffles them during play.
 - short_answer: acceptedAnswers=["answer","alternative"], 1–30 nonempty answers. Matching ignores case and surrounding spaces.
 - slider: numeric min, max, target and tolerance. min and max must be between -1000000000 and 1000000000, with min < max; target is within the range; tolerance is an absolute distance from 0 to max-min.
-- pin: image is required; target={"x":0.5,"y":0.5} uses image coordinates from 0 to 1; tolerance is a radius in image units, from 0.01 to 1 (default 0.1).
+- pin: image is required. Use answerRegion={"shape":"box","x":0.5,"y":0.5,"width":0.2,"height":0.2}; x/y are the area centre and width/height are fractions of the image. Pins inside the area are correct. Use box by default; circle uses a bounding ellipse, sized to look round on the image. The host can draw or adjust the area visually.
 - poll: options, no answer key. word_cloud, open_ended and slide: no options or answer key. These four types use points=0.
 Include only fields that apply to the question type. Limits in characters: title 120, each tag 80 (up to 12), description/explanation 2000, prompt 1000, option text 500, each accepted answer 200.
 
