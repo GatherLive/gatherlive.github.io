@@ -51,6 +51,8 @@ export interface RoomIdentity {
   superseded?: boolean; authenticating?: boolean; acceptedAt?: number;
   mediaReadyToken?: string; chatWindowStart?: number; chatMessages?: number;
   windowStart?: number; messages?: number;
+  typingWindowStart?: number; typingMessages?: number;
+  chatViewing?: boolean; chatTypingUntil?: number;
   rateErrorAt?: number; rateErrors?: number;
 }
 export interface Mention { id: string; start: number; end: number; name?: string }
@@ -63,7 +65,8 @@ export interface ChatMessage {
   at: number; createdAt?: number; requestId?: string; replyTo?: string; mentions?: Mention[];
   reactions: Record<string, string | number>; myReaction?: string; deleted?: boolean;
 }
-export interface ChatMetadata extends ChatSettings { unlocked: boolean; open: boolean; revision: number }
+export interface ChatTypingEvent { type: 'chat_typing'; senderId: string; senderName?: string; remainingMs: number }
+export interface ChatMetadata extends ChatSettings { unlocked: boolean; open: boolean; revision: number; typingIndicators?: boolean }
 export interface UsageLimits { images: number; quizzes: number; results: number; participants: number }
 export interface AccountUser { id: string; email?: string }
 export interface AccountSession { access_token: string; refresh_token: string; expires_at?: number; user: AccountUser }

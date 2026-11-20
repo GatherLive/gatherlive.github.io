@@ -2,6 +2,7 @@ import type {Quiz, ChatMetadata, ChatMessage, Announcement, DataRecord} from '..
 import {announcementText,tickAnnouncement} from './countdown.js';
 import {mentionedViewer,mentionText} from './mentions.js';
 import {MentionComposer} from './mention-composer.js';
+import {ChatTyping} from './typing.js';
 export const CHAT_OPTIONS=[['off','Off'],['lobby','Lobby only'],['breaks','Between questions & rounds'],['rounds','Lobby & round breaks']];
 const EMOJI=['👍','❤️','😂','🎉','👏','😮'];
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -24,6 +25,7 @@ export class RoomChat {
   declare reconnectPending: boolean;
   declare identity: string;
   declare mentions: MentionComposer;
+  declare typing: ChatTyping;
   declare hidden: boolean;
   declare viewport: () => void;
   declare keepKeyboard: (event: PointerEvent) => void;
@@ -32,7 +34,7 @@ export class RoomChat {
   declare roomCount: number;
   declare dismissed: string | null;
   declare state: () => DataRecord;
-  declare send: (message: DataRecord) => boolean;
+  declare send: (message: DataRecord, options?: {quiet?: boolean}) => boolean;
   declare notify: (message: string, error?: boolean) => void;
   declare modal: (title: string, body: string, actions?: string) => void;
   declare closeModal: () => void;
@@ -43,6 +45,7 @@ export class RoomChat {
   constructor({state,send,notify,modal,closeModal,id,icon,accessStatus}) {
     Object.assign(this,{state,send,notify,modal,closeModal,id,icon,accessStatus});
     this.messages=[];this.announcement=null;this.revision=-1;this.meta=null;this.open=false;this.draft='';this.replyTo=null;this.emojiFor=null;this.menuFor=null;this.pending=new Map();this.unread=0;this.sending=false;this.mentioned=new Set();this.connected=false;this.hadConversation=false;this.reconnectPending=false;this.identity=this.actorId();this.mentions=new MentionComposer(this);
+    this.typing=new ChatTyping(this);
     try{this.hidden=localStorage.getItem('gather.chat.hidden')==='true';}catch{this.hidden=false;}
     this.viewport=()=>{const overlay=document.querySelector<HTMLElement>('.chat-overlay');if(overlay&&window.visualViewport){overlay.style.height=window.visualViewport.height+'px';overlay.style.top=window.visualViewport.offsetTop+'px';overlay.style.setProperty('--chat-visible-height',window.visualViewport.height+'px');}};
     this.keepKeyboard=event=>{if((event.target as HTMLElement).closest('#chat-form button[type="submit"],[data-action="chat-mention-select"],[data-action="chat-mention-retry"]')&&document.activeElement?.id==='chat-input')event.preventDefault();};
@@ -53,7 +56,18 @@ export class RoomChat {
     this.visible=()=>{if(!document.hidden){if(this.open){this.mentioned.clear();this.unread=0;}this.tick(this.state().clock?.now()??Date.now());this.refresh();}};
     document.addEventListener('visibilitychange',this.visible);
   }
-  destroy() {this.mentions.destroy();document.removeEventListener('visibilitychange',this.visible);this.close();document.querySelector<HTMLElement>('#room-chat-root')?.replaceChildren();window.visualViewport?.removeEventListener('resize',this.viewport);window.visualViewport?.removeEventListener('scroll',this.viewport);window.removeEventListener('resize',this.viewport);document.removeEventListener('pointerdown',this.keepKeyboard);for(const item of this.pending.values()){clearTimeout(item.timer);item.reject(new Error('Connection closed.'));}this.pending.clear();}
+  destroy() {
+    this.mentions.destroy();
+    document.removeEventListener('visibilitychange',this.visible);
+    this.close();
+    document.querySelector<HTMLElement>('#room-chat-root')?.replaceChildren();
+    window.visualViewport?.removeEventListener('resize',this.viewport);
+    window.visualViewport?.removeEventListener('scroll',this.viewport);
+    window.removeEventListener('resize',this.viewport);
+    document.removeEventListener('pointerdown',this.keepKeyboard);
+    for(const item of this.pending.values()){clearTimeout(item.timer);item.reject(new Error('Connection closed.'));}
+    this.pending.clear();
+  }
   lockPage(locked) {
     if(locked&&!this.pageLock){
       const style=document.body.style;this.pageLock={y:window.scrollY,position:style.position,top:style.top,width:style.width,overflow:style.overflow};
@@ -114,6 +128,7 @@ export class RoomChat {
     });
   }
   receive(data) {
+    if(data.type==='chat_typing'){this.typing.receive(data);return true;}
     if(data.type==='chat_ack'||data.scope==='conversation'){
       const item=this.pending.get(data.requestId);
       if(item){clearTimeout(item.timer);this.pending.delete(data.requestId);data.type==='chat_ack'?item.resolve(data):item.reject(new Error(data.message||'Please try again.'));}
@@ -132,6 +147,7 @@ export class RoomChat {
       if(data.revision<=this.revision)return true;
       this.revision=data.revision;
       if(data.type==='chat_message'){
+        this.typing.clear(data.message.senderId);
         if(!this.hidden&&!this.messages.some(item=>item.id===data.message.id)){
           this.messages.push(data.message);this.messages=this.messages.slice(-60);
           this.noteUnread(data.message);
@@ -174,11 +190,15 @@ export class RoomChat {
   panel() {
     if(!this.open||this.hidden||!this.available())return '';
     const parent=this.replyTo&&this.messages.find(item=>item.id===this.replyTo&&!item.deleted),count=this.state().roomState?.participantCount??0;
-    return `<div class="chat-overlay"><div class="chat-backdrop" data-action="chat-close"></div><aside class="chat-panel" role="dialog" aria-modal="true" aria-labelledby="chat-title" tabindex="-1"><header class="chat-panel-head"><span class="chat-header-mark">${this.icon('chat',23)}</span><div class="chat-header-copy"><h2 id="chat-title">Room chat</h2><p>${count} player${count===1?'':'s'}</p></div><button class="icon-btn" data-action="chat-hide" aria-label="Hide chat" title="Hide chat">${this.icon('hide',17)}</button><button class="icon-btn" data-action="chat-close" aria-label="Close chat">${this.icon('close',18)}</button></header><div class="chat-messages" role="log" aria-label="Messages" aria-live="polite" aria-relevant="additions text">${this.messages.length?this.messages.map((item,index)=>this.messageView(item,index)).join(''):`<div class="chat-empty">${this.icon('chat',30)}<p>Say hello</p></div>`}</div><form id="chat-form" class="chat-composer"><div class="chat-mention-slot"></div><div class="chat-reply-slot">${parent?`<div class="chat-reply-preview"><div><strong>Reply to ${esc(parent.senderName)}</strong><span>${esc(parent.text.slice(0,80))}</span></div><button type="button" class="icon-btn" data-action="chat-cancel-reply" aria-label="Cancel reply">${this.icon('close',14)}</button></div>`:''}</div><div class="chat-compose-row"><label class="sr-only" for="chat-input">Message</label><textarea id="chat-input" placeholder="Message" maxlength="400" rows="1" required enterkeyhint="send">${esc(this.draft)}</textarea><button class="btn primary" type="submit" aria-label="Send message" ${this.sending||!this.state().connected?'disabled':''}>${this.icon('send',19)}</button></div></form></aside></div>`;
+    return `<div class="chat-overlay"><div class="chat-backdrop" data-action="chat-close"></div><aside class="chat-panel" role="dialog" aria-modal="true" aria-labelledby="chat-title" tabindex="-1"><header class="chat-panel-head"><span class="chat-header-mark">${this.icon('chat',23)}</span><div class="chat-header-copy"><h2 id="chat-title">Room chat</h2><p>${count} player${count===1?'':'s'}</p></div><button class="icon-btn" data-action="chat-hide" aria-label="Hide chat" title="Hide chat">${this.icon('hide',17)}</button><button class="icon-btn" data-action="chat-close" aria-label="Close chat">${this.icon('close',18)}</button></header><div class="chat-messages" role="log" aria-label="Messages" aria-live="polite" aria-relevant="additions text">${this.messages.length?this.messages.map((item,index)=>this.messageView(item,index)).join(''):`<div class="chat-empty">${this.icon('chat',30)}<p>Say hello</p></div>`}</div><form id="chat-form" class="chat-composer"><div class="chat-mention-slot"></div><div class="chat-reply-slot">${parent?`<div class="chat-reply-preview"><div><strong>Reply to ${esc(parent.senderName)}</strong><span>${esc(parent.text.slice(0,80))}</span></div><button type="button" class="icon-btn" data-action="chat-cancel-reply" aria-label="Cancel reply">${this.icon('close',14)}</button></div>`:''}</div>
+      <div class="chat-typing" role="status"><span class="chat-typing-dots" aria-hidden="true"><span></span><span></span><span></span></span><span class="chat-typing-label" dir="auto"></span></div>
+      <div class="chat-compose-row"><label class="sr-only" for="chat-input">Message</label><textarea id="chat-input" placeholder="Message" maxlength="400" rows="1" required enterkeyhint="send">${esc(this.draft)}</textarea><button class="btn primary" type="submit" aria-label="Send message" ${this.sending||!this.state().connected?'disabled':''}>${this.icon('send',19)}</button></div>
+      </form></aside></div>`;
   }
   refresh() {
     this.syncConnection();
     if(this.open&&!this.available())this.close();
+    this.typing.sync();
     const tools=document.querySelector<HTMLElement>('#room-tools');if(tools){tools.innerHTML=this.tools();tools.hidden=!tools.innerHTML;}
     const announcement=document.querySelector<HTMLElement>('#room-announcement');if(announcement){const markup=this.announcementView();if(announcement.innerHTML!==markup)announcement.innerHTML=markup;}
     const root=document.querySelector<HTMLElement>('#room-chat-root');if(!root)return;
@@ -195,12 +215,16 @@ export class RoomChat {
         if(current&&next&&current.innerHTML!==next.innerHTML)current.innerHTML=next.innerHTML;
       }
     }
-    this.viewport();this.mentions.render();
+    this.viewport();this.mentions.render();this.typing.render();
     const next=document.querySelector<HTMLElement>('.chat-messages');if(next)next.scrollTop=atBottom?next.scrollHeight:scroll;
     const compose=document.querySelector<HTMLTextAreaElement>('#chat-input');if(compose){if(compose.value!==this.draft)compose.value=this.draft;compose.style.height='auto';compose.style.height=Math.min(140,compose.scrollHeight)+'px';}
     const send=root.querySelector<HTMLButtonElement>('button[type="submit"]');if(send){send.disabled=this.sending||!this.state().connected;send.setAttribute('aria-busy',String(this.sending));}
   }
-  close() {if(document.activeElement?.closest('.chat-panel'))(document.activeElement as HTMLElement).blur();this.open=false;this.emojiFor=null;this.menuFor=null;this.mentions.close();this.lockPage(false);}
+  close() {
+    this.open=false;this.typing.sync();
+    if(document.activeElement?.closest('.chat-panel'))(document.activeElement as HTMLElement).blur();
+    this.emojiFor=null;this.menuFor=null;this.mentions.close();this.lockPage(false);
+  }
   settings() {
     if(this.state().roomState?.phase==='finished')return;
     const config: Partial<ChatMetadata>=this.meta??{};
@@ -243,6 +267,7 @@ export class RoomChat {
   async submit(form) {
     if(form.id==='chat-form'){
       if(this.sending||!this.state().connected||!this.draft.trim())return;
+      this.typing.stop();
       const text=this.draft,replyTo=this.replyTo,payload=this.mentions.payload();this.sending=true;this.mentions.close();this.refresh();
       try{await this.request('chat_send',{...payload,replyTo});if(this.draft===text){this.draft='';this.mentions.reset();}if(this.replyTo===replyTo)this.replyTo=null;}
       finally{this.sending=false;this.refresh();document.querySelector<HTMLTextAreaElement>('#chat-input')?.focus({preventScroll:true});}

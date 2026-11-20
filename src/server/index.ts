@@ -92,11 +92,23 @@ function send(ws,message){if(ws.readyState===1){if(ws.bufferedAmount>1024*1024){
 function sendState(room,ws,identity){send(ws,{type:'state',state:room.engine.snapshot(identity.role==='host',identity.playerId,{media:identity.mediaVersion||false,conversation:identity.conversationVersion===1})});}
 function sendConversation(room,ws,identity){if(identity.conversationVersion===1)send(ws,{type:'conversation',state:room.engine.conversation.snapshot(identity,room.engine.phase)});}
 function broadcastConversation(room,event){
-  if(room.closed||room.engine.phase==='finished')return;
+  if(!event||room.closed||room.engine.phase==='finished')return;
+  const packet=JSON.stringify(event);
   for(const [ws,id]of room.clients){
     if(id.conversationVersion!==1||id.superseded)continue;
     if(id.chatSubscribed===false&&!['announcement','chat_settings','chat_cleared'].includes(event.type))continue;
-    send(ws,event);
+    if(event.type==='chat_typing'&&(!id.chatViewing||event.senderId===(id.role==='host'?'host':id.playerId)))continue;
+    send(ws,packet);
+  }
+}
+function updateTyping(room,ws,identity,message){
+  const {conversation,phase,players}=room.engine,now=Date.now(),wasViewing=identity.chatViewing;
+  broadcastConversation(room,conversation.updateTyping(identity,message,phase,players,now));
+  if(wasViewing||!identity.chatViewing)return;
+  for(const [other,id] of room.clients){
+    if(other===ws||other.readyState!==1)continue;
+    const activity=conversation.typingStatus(id,players,now);
+    if(activity)send(ws,activity);
   }
 }
 function broadcastProgress(room){
@@ -260,7 +272,11 @@ server.on('upgrade',async(req,socket,head)=>{
     if(auth.identity.role==='host'&&room.engine.phase!=='finished'&&room.engine.chatUnlocked!==auth.chatUnlocked){if(auth.chatUnlocked)room.engine.authorizeChat({enable:false});else room.engine.revokeChat();await persist(room);await persistConversation(room);}
     Object.assign(identity,auth.identity);clearTimeout(authTimer);
     if(identity.playerId){
-      for(const [other,id] of room.clients)if(other!==ws&&id.playerId===identity.playerId){id.superseded=true;delete id.playerId;other.close(4001,'Connected on another tab.');}
+      for(const [other,id] of room.clients)if(other!==ws&&id.playerId===identity.playerId){
+        id.superseded=true;
+        broadcastConversation(room,room.engine.conversation.stopTyping(id));
+        delete id.playerId;other.close(4001,'Connected on another tab.');
+      }
       await persistPlayer(room,identity.playerId);
     }
     send(ws,auth.welcome);sendState(room,ws,identity);sendConversation(room,ws,identity);joinBroadcast(room);
@@ -275,7 +291,7 @@ server.on('upgrade',async(req,socket,head)=>{
       message=decodeMessage(bytes.toString());
       if(!allowMessage(identity,Date.now(),message.type))throw new HttpError(429,'Please slow down.');
       if(identity.authenticating)throw new HttpError(409,'Sign-in is already in progress.');
-    }catch(error){send(ws,{...safeError(error),...(CONVERSATION_COMMANDS.has(message?.type)||message?.type==='chat_subscribe'?{scope:'conversation',requestId:message.requestId}:{})});if(error.status===429&&repeatedFlood(identity))ws.close(1008,'Too many messages. Reconnect after a short pause.');return;}
+    }catch(error){if(message?.type!=='chat_typing')send(ws,{...safeError(error),...(CONVERSATION_COMMANDS.has(message?.type)||message?.type==='chat_subscribe'?{scope:'conversation',requestId:message.requestId}:{})});if(error.status===429&&repeatedFlood(identity))ws.close(1008,'Too many messages. Reconnect after a short pause.');return;}
     // Supabase verification must never hold the room's gameplay queue.
     if(!identity.role && message.type==='auth' && message.role==='host'){
       identity.authenticating=true;
@@ -290,6 +306,10 @@ server.on('upgrade',async(req,socket,head)=>{
       };
       try{
         if(!active()||expireAuth())return;
+        if(message.type==='chat_typing'){
+          if(identity.role)updateTyping(room,ws,identity,message);
+          return;
+        }
         room.engine.tick();
         await persistTransition();
         if(!identity.role){
@@ -305,7 +325,9 @@ server.on('upgrade',async(req,socket,head)=>{
         if(message.type==='ping'){send(ws,{type:'pong',...(typeof message.id==='string'&&message.id.length<=80?{id:message.id,serverReceivedAt}:{}),serverNow:Date.now()});return;}
         if(message.type==='chat_subscribe'){
           if(identity.conversationVersion!==1||typeof message.enabled!=='boolean')throw new HttpError(400,'Choose whether to receive chat.');
-          identity.chatSubscribed=message.enabled;sendConversation(room,ws,identity);return;
+          identity.chatSubscribed=message.enabled;
+          if(!message.enabled){identity.chatViewing=false;broadcastConversation(room,room.engine.conversation.stopTyping(identity));}
+          sendConversation(room,ws,identity);return;
         }
         if(message.type==='chat_unlock'){
           if(identity.role!=='host'||identity.userId!==room.meta.ownerId)throw new HttpError(403,'Only the host can unlock chat.');
@@ -336,17 +358,29 @@ server.on('upgrade',async(req,socket,head)=>{
         }else{
           await persist(room);persistedPhase=room.engine.phase;
           if(result?.type)send(ws,result);
-          if(message.type==='kick')for(const [other,id]of room.clients)if(id.playerId===message.playerId){id.superseded=true;delete id.playerId;send(other,{type:'error',message:'The host removed you from this quiz.'});other.close(4003,'Removed by host.');}
+          if(message.type==='kick')for(const [other,id]of room.clients)if(id.playerId===message.playerId){
+            id.superseded=true;
+            broadcastConversation(room,room.engine.conversation.stopTyping(id));
+            delete id.playerId;send(other,{type:'error',message:'The host removed you from this quiz.'});other.close(4003,'Removed by host.');
+          }
           broadcast(room);
         }
       }catch(error){
         authFailure();
         await persistTransition();
-        send(ws,{...safeError(error),...(CONVERSATION_COMMANDS.has(message?.type)||message?.type==='chat_subscribe'?{scope:'conversation',requestId:message.requestId}:{})});
+        if(message.type!=='chat_typing')send(ws,{...safeError(error),...(CONVERSATION_COMMANDS.has(message?.type)||message?.type==='chat_subscribe'?{scope:'conversation',requestId:message.requestId}:{})});
       }
     }).catch(()=>{});
   });
-  ws.on('close',()=>{clearTimeout(authTimer);serial(room,async()=>{room.clients.delete(ws);if(!room.closed&&identity.playerId){room.engine.disconnect(identity.playerId);if(room.engine.tick()){await persist(room);broadcast(room);}else await persistPlayer(room,identity.playerId);joinBroadcast(room);}}).catch(()=>{});});
+  ws.on('close',()=>{
+    clearTimeout(authTimer);
+    serial(room,async()=>{
+      room.clients.delete(ws);
+      if(room.closed||identity.superseded)return;
+      broadcastConversation(room,room.engine.conversation.stopTyping(identity));
+      if(identity.playerId){room.engine.disconnect(identity.playerId);if(room.engine.tick()){await persist(room);broadcast(room);}else await persistPlayer(room,identity.playerId);joinBroadcast(room);}
+    }).catch(()=>{});
+  });
   ws.on('error',()=>{});
  });
 });

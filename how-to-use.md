@@ -185,6 +185,7 @@ You can also turn **Replies**, **Emoji reactions** and **Participant mentions** 
 
 Chat is always closed during the countdown, during a question, and after the quiz ends.
 The host can clear all chat messages or remove a single message.
+When chat is open, a hint above the message box shows who is typing.
 
 ### Mentions
 

@@ -392,9 +392,9 @@ export function createFeaturesLiveConnection(context: AppContext) {
         context.updateRoomSettings();
     }
     function connectionLabel() { const text = S.connected ? 'Connected' : ({ connecting: 'Connecting', reconnecting: 'Reconnecting', offline: 'Offline', disconnected: 'Disconnected' }[S.connectionStatus] || 'Connecting'); return `<span class="connection-dot" aria-hidden="true"></span><span>${text}</span>${!S.connected && S.room && !S.fatalRoomError ? '<button class="connection-retry" data-action="reconnect" aria-label="Reconnect now" title="Reconnect now">↻</button>' : ''}`; }
-    function send(command) {
+    function send(command, {quiet = false} = {}) {
         if (!S.connected || S.ws?.readyState !== WebSocket.OPEN) {
-            toast('Waiting for your connection to return.', true);
+            if (!quiet) toast('Waiting for your connection to return.', true);
             return false;
         }
         S.ws.send(JSON.stringify(command));

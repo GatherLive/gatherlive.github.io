@@ -46,7 +46,48 @@
   background: #2922331a;
   color: inherit;
 }
-.chat-composer { position: relative; }
+.chat-composer {
+  position: relative;
+  padding-top: 4px;
+}
+.chat-typing {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 16px;
+  margin: 0 8px 4px;
+  color: var(--soft);
+  font-size: 12px;
+  line-height: 16px;
+}
+.chat-typing-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-typing-dots {
+  display: none;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+}
+.chat-typing.is-active .chat-typing-dots { display: inline-flex; }
+.chat-typing-dots span {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .chat-typing.is-active .chat-typing-dots span { animation: chat-typing-dot 1.2s ease-in-out infinite; }
+  .chat-typing-dots span:nth-child(2) { animation-delay: 140ms; }
+  .chat-typing-dots span:nth-child(3) { animation-delay: 280ms; }
+  @keyframes chat-typing-dot {
+    0%, 60%, 100% { opacity: .5; transform: translateY(0); }
+    30% { opacity: 1; transform: translateY(-2px); }
+  }
+}
 .chat-mention-slot:empty { display: none; }
 .chat-mention-picker {
   position: absolute;

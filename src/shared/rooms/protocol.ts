@@ -49,11 +49,13 @@ export function snapshotBatch(engine, encoded = false) {
 }
 export function allowMessage(identity,now=Date.now(),type='') {
   // Chat spam must not consume a participant's answer allowance.
-  const social=/^(?:chat_|announce$)/.test(type),windowKey=social?'chatWindowStart':'windowStart',countKey=social?'chatMessages':'messages';
+  const typing=type==='chat_typing',social=/^(?:chat_|announce$)/.test(type);
+  const windowKey=typing?'typingWindowStart':social?'chatWindowStart':'windowStart';
+  const countKey=typing?'typingMessages':social?'chatMessages':'messages';
   const windowStart=identity[windowKey] ?? now;
   if (now-windowStart >= 1000) {identity[windowKey]=now;identity[countKey]=1;return true;}
   identity[windowKey]=windowStart;identity[countKey]=(identity[countKey] || 0)+1;
-  return identity[countKey] <= (identity.role === 'host' ? 25 : social?5:8);
+  return identity[countKey] <= (typing ? 8 : identity.role === 'host' ? 25 : social?5:8);
 }
 export function repeatedFlood(identity,now=Date.now()) {
   if(now-(identity.rateErrorAt||0)>=1000){identity.rateErrorAt=now;identity.rateErrors=0;}

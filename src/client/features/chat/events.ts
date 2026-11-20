@@ -5,8 +5,10 @@ export function createFeaturesChatEvents(context: AppContext) {
     function onInput(event) {
         const el = event.target;
         if (el.id === 'chat-input') {
-            if (S.chat)
+            if (S.chat) {
                 S.chat.mentions.input(el, event.isComposing);
+                S.chat.typing.input(el.value);
+            }
             el.style.height = 'auto';
             el.style.height = Math.min(140, el.scrollHeight) + 'px';
             return true;

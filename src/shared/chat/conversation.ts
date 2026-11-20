@@ -1,10 +1,12 @@
-import type {RoomIdentity, ChatSettings, ChatMessage, Announcement, DataRecord} from '../types.js';
+import type {RoomIdentity, RoomPhase, RoomPlayer, ChatSettings, ChatMessage, ChatTypingEvent, Announcement, DataRecord} from '../types.js';
 import {announcementCountdown} from './announcements.js';
 import {mentionMembers,messageMentions} from './mentions.js';
 // Room-only text conversation. Never part of quiz scoring or saved reports.
 export const CONVERSATION_COMMANDS = new Set(['chat_members','chat_send','chat_react','chat_delete','chat_clear','chat_settings','chat_unlock','announce']);
 export const CHAT_MODES = new Set(['off','lobby','breaks','rounds']);
 export const REACTIONS = ['👍','❤️','😂','🎉','👏','😮'];
+const TYPING_DURATION_MS = 6500;
+const TYPING_REFRESH_MIN_MS = 2500;
 const fail = (message) => { const error = new Error(message); error.name = 'EngineError'; throw error; };
 const copy = value => JSON.parse(JSON.stringify(value));
 const text = (value, max) => {
@@ -40,7 +42,35 @@ export class RoomConversation {
   metadata(phase) {
     const mode=this.config.chatMode;
     const open=this.unlocked&&mode!=='off'&&!['countdown','question','finished'].includes(phase)&&(phase==='lobby'||mode==='breaks'||mode==='rounds'&&phase==='round_results');
-    return {...this.config,unlocked:this.unlocked,open,revision:this.revision};
+    return {...this.config,unlocked:this.unlocked,open,revision:this.revision,typingIndicators:true};
+  }
+  // Typing activity belongs to the live connection and expires without a room timer.
+  updateTyping(identity: RoomIdentity, message: DataRecord, phase: RoomPhase, players: ReadonlyMap<string, RoomPlayer>, now: number): ChatTypingEvent | null {
+    if (!identity.role || identity.conversationVersion !== 1) return null;
+    if (typeof message.viewing === 'boolean') {
+      identity.chatViewing = message.viewing && this.metadata(phase).open;
+      return identity.chatViewing ? null : this.stopTyping(identity, now);
+    }
+    if (message.active === false) return this.stopTyping(identity, now);
+    if (message.active !== true || !identity.chatViewing || identity.chatSubscribed === false || !this.metadata(phase).open) return null;
+    const remaining = (identity.chatTypingUntil ?? 0) - now;
+    if (remaining > TYPING_DURATION_MS - TYPING_REFRESH_MIN_MS) return null;
+    identity.chatTypingUntil = now + TYPING_DURATION_MS;
+    return this.typingStatus(identity, players, now);
+  }
+  typingStatus(identity: RoomIdentity, players: ReadonlyMap<string, RoomPlayer>, now: number): ChatTypingEvent | null {
+    const remainingMs = (identity.chatTypingUntil ?? 0) - now;
+    if (remainingMs <= 0 || !identity.chatViewing || identity.chatSubscribed === false || identity.superseded) return null;
+    if (identity.role === 'host') return {type: 'chat_typing', senderId: 'host', senderName: 'Host', remainingMs};
+    const player = identity.role === 'player' ? players.get(identity.playerId) : null;
+    if (!player?.connected || player.kicked) return null;
+    return {type: 'chat_typing', senderId: player.id, senderName: player.name, remainingMs};
+  }
+  stopTyping(identity: RoomIdentity, now = Date.now()): ChatTypingEvent | null {
+    const senderId = identity.role === 'host' ? 'host' : identity.playerId;
+    const wasTyping = (identity.chatTypingUntil ?? 0) > now;
+    delete identity.chatTypingUntil;
+    return senderId && wasTyping ? {type: 'chat_typing', senderId, remainingMs: 0} : null;
   }
   actor(identity, players) {
     if(identity.role==='host')return {id:'host',name:'Host',role:'host'};

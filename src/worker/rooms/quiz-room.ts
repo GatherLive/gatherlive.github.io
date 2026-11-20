@@ -210,12 +210,28 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
   sendState(ws,identity) {this.send(ws,{type:'state',state:this.engine.snapshot(identity.role==='host',identity.playerId,{media:identity.mediaVersion||false,conversation:identity.conversationVersion===1})});}
   sendConversation(ws,identity) {if(identity.conversationVersion===1)this.send(ws,{type:'conversation',state:this.engine.conversation.snapshot(identity,this.engine.phase)});}
   broadcastConversation(event) {
-    if(!this.engine||this.engine.phase==='finished')return;
+    if(!event||!this.engine||this.engine.phase==='finished')return;
+    const packet=JSON.stringify(event);
     for(const ws of this.ctx.getWebSockets()){
       const identity=ws.deserializeAttachment();
       if(identity?.conversationVersion!==1||identity.superseded||identity.roomId!==this.meta.reportId)continue;
       if(identity.chatSubscribed===false&&!['announcement','chat_settings','chat_cleared'].includes(event.type))continue;
-      this.send(ws,event);
+      if(event.type==='chat_typing'&&(!identity.chatViewing||event.senderId===(identity.role==='host'?'host':identity.playerId)))continue;
+      this.send(ws,packet);
+    }
+  }
+  updateTyping(ws,identity,message) {
+    const {conversation,phase,players}=this.engine,now=Date.now(),wasViewing=identity.chatViewing;
+    const event=conversation.updateTyping(identity,message,phase,players,now);
+    ws.serializeAttachment(identity);
+    this.broadcastConversation(event);
+    if(wasViewing||!identity.chatViewing)return;
+    for(const other of this.ctx.getWebSockets()){
+      if(other===ws||other.readyState!==1)continue;
+      const id=other.deserializeAttachment();
+      if(id?.roomId!==this.meta.reportId)continue;
+      const activity=conversation.typingStatus(id,players,now);
+      if(activity)this.send(ws,activity);
     }
   }
   broadcastProgress() {
@@ -260,8 +276,10 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
       if(!identity.role && Date.now()-(identity.acceptedAt || 0)>=10000){ws.serializeAttachment({superseded:true});ws.close(4008,'Join timed out.');return;}
       if(identity.authenticating)throw new HttpError(409,'Sign-in is already in progress.');
       const allowed=allowMessage(identity,Date.now(),message.type);
+      if(allowed&&message.type==='chat_typing'&&identity.role){this.updateTyping(ws,identity,message);return;}
       ws.serializeAttachment(identity);
       if(!allowed)throw new HttpError(429,'Please slow down.');
+      if(message.type==='chat_typing')return;
       this.engine.tick();
       await persistTransition();
       if(!identity.role){
@@ -284,7 +302,12 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
         if(identity.playerId){
           for(const other of this.ctx.getWebSockets()){
             if(other===ws)continue;
-            if(other.deserializeAttachment()?.playerId===identity.playerId){other.serializeAttachment({superseded:true});try{other.close(4001,'Connected on another tab.');}catch{}}
+            const previous=other.deserializeAttachment();
+            if(previous?.playerId===identity.playerId){
+              other.serializeAttachment({superseded:true});
+              this.broadcastConversation(engine.conversation.stopTyping(previous));
+              try{other.close(4001,'Connected on another tab.');}catch{}
+            }
           }
           this.savePlayer(identity.playerId);
         }
@@ -298,7 +321,14 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
       if(message.type==='ping'){this.send(ws,{type:'pong',...(typeof message.id==='string'&&message.id.length<=80?{id:message.id,serverReceivedAt}:{}),serverNow:Date.now()});return;}
       if(message.type==='chat_subscribe'){
         if(identity.conversationVersion!==1||typeof message.enabled!=='boolean')throw new HttpError(400,'Choose whether to receive chat.');
-        identity.chatSubscribed=message.enabled;ws.serializeAttachment(identity);this.sendConversation(ws,identity);return;
+        identity=ws.deserializeAttachment();
+        if(!identity?.role||identity.superseded||identity.roomId!==this.meta.reportId)return;
+        identity.chatSubscribed=message.enabled;
+        if(!message.enabled)identity.chatViewing=false;
+        const event=message.enabled?null:this.engine.conversation.stopTyping(identity);
+        ws.serializeAttachment(identity);
+        this.broadcastConversation(event);
+        this.sendConversation(ws,identity);return;
       }
       if(message.type==='chat_unlock'){
         if(identity.role!=='host'||identity.userId!==this.meta.ownerId)throw new HttpError(403,'Only the host can unlock chat.');
@@ -334,14 +364,21 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
         this.checkpoint();persistedPhase=this.engine.phase;
         if(result?.type)this.send(ws,result);
         if(message.type==='kick'){
-          for(const client of this.ctx.getWebSockets())if(client.deserializeAttachment()?.playerId===message.playerId){this.send(client,{type:'error',message:'The host removed you from this quiz.'});client.serializeAttachment({superseded:true});try{client.close(4003,'Removed by host.');}catch{}}
+          for(const client of this.ctx.getWebSockets()){
+            const removed=client.deserializeAttachment();
+            if(removed?.playerId!==message.playerId)continue;
+            this.send(client,{type:'error',message:'The host removed you from this quiz.'});
+            client.serializeAttachment({superseded:true});
+            this.broadcastConversation(this.engine.conversation.stopTyping(removed));
+            try{client.close(4003,'Removed by host.');}catch{}
+          }
         }
         this.broadcast();
       }
       if(message.type!=='answer'&&result?.channel!=='conversation')await this.schedule();
     }catch(error){
       await persistTransition();
-      this.send(ws,{...safeError(error),...(CONVERSATION_COMMANDS.has(message?.type)||message?.type==='chat_subscribe'?{scope:'conversation',requestId:message.requestId}:{})});
+      if(message?.type!=='chat_typing')this.send(ws,{...safeError(error),...(CONVERSATION_COMMANDS.has(message?.type)||message?.type==='chat_subscribe'?{scope:'conversation',requestId:message.requestId}:{})});
       const identity=ws.deserializeAttachment();
       if(identity&&error.status===429){if(repeatedFlood(identity)){identity.throttled=true;try{ws.close(1008,'Too many messages. Reconnect after a short pause.');}catch{}}ws.serializeAttachment(identity);}
       if(identity&&!identity.role&&!identity.superseded){identity.authFailures=(identity.authFailures||0)+1;ws.serializeAttachment(identity);if(identity.authFailures>=5){ws.serializeAttachment({...identity,superseded:true});try{ws.close(4008,'Too many join attempts. Wait a minute and retry.');}catch{}}}
@@ -350,7 +387,10 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
   async webSocketClose(ws) {
     this.hostSockets.delete(ws);
     const identity=ws.deserializeAttachment();
-    if(this.engine && !this.purging && !identity?.superseded && identity?.playerId && identity.roomId===this.meta.reportId){this.engine.disconnect(identity.playerId);if(this.engine.tick()){this.checkpoint();this.broadcast();await this.schedule();}else this.savePlayer(identity.playerId);this.broadcastJoins();}
+    if(this.engine && !this.purging && !identity?.superseded && identity?.roomId===this.meta.reportId){
+      this.broadcastConversation(this.engine.conversation.stopTyping(identity));
+      if(identity.playerId){this.engine.disconnect(identity.playerId);if(this.engine.tick()){this.checkpoint();this.broadcast();await this.schedule();}else this.savePlayer(identity.playerId);this.broadcastJoins();}
+    }
     try{ws.close(1000,'Connection closed.');}catch{}
   }
   async webSocketError(ws){await this.webSocketClose(ws);}

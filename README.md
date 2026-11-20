@@ -12,7 +12,7 @@ Free, open-source live quizzes for everyone.
 | Question types | Use 11 formats, including multiple choice, word clouds, sliders and image pins. |
 | Pin on image | Place the correct dot and resize a circle or box for accepted answers. |
 | Game settings | Choose timers, scoring, shuffling, rounds, rewards and leaderboards. |
-| Room tools | Use optional join verification, room chat, mentions and countdown announcements. |
+| Room tools | Use optional join verification, chat with typing indicators and mentions, and countdown announcements. |
 | Quiz library | Organise reusable quizzes with tags, search and hosting filters. |
 | Quiz files | Import/export JSON, start with a sample or copy an AI quiz prompt. |
 | Detailed results | Review question cards and participant responses; download PDF, HTML or CSV reports. |
