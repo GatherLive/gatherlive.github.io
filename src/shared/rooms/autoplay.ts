@@ -1,6 +1,7 @@
 import type {AutoplayOptions, RoomAutoplay} from '../types.js';
 
 export const ROOM_LIFETIME_MS = 24 * 60 * 60 * 1000;
+export const FINISHED_RETENTION_MS = 15 * 60 * 1000;
 export const AUTOPLAY_IMAGE_WAIT_MS = 5000;
 export const AUTOPLAY_SLIDE_MS = 8000;
 export const AUTOPLAY_IDLE_MS = 5 * 60 * 1000;

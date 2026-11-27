@@ -47,15 +47,18 @@ export function createRoomSettings(context: AppContext) {
         document.querySelectorAll('[data-join-expiry]').forEach(element => element.textContent = valid ? `Changes in ${Math.max(1, Math.ceil((current.localDeadline - Date.now()) / 1000))}s` : 'Updating verification code…');
         if (!valid) requestChallenge();
     }
-    function updateRoomSettings() {
+    function updateRoomSettings(revealMode = S.roomState?.settings?.game?.reveal ?? 'all') {
+        const canChangeReveal = S.connected && S.roomState?.phase !== 'finished';
         const reveal = $<HTMLSelectElement>('#room-game-reveal');
         if (reveal) {
-            reveal.disabled = !S.connected || S.roomState?.phase === 'finished';
-            reveal.value = S.roomState?.settings?.game?.reveal ?? 'all';
+            reveal.disabled = !canChangeReveal;
+            reveal.value = revealMode;
         }
         const delay = $<HTMLInputElement>('#room-game-reveal-delay');
         if (delay) {
-            delay.disabled = !S.connected || S.roomState?.phase === 'finished';
+            const automatic = revealMode === 'auto';
+            delay.closest('.room-game-reveal-interval')?.toggleAttribute('hidden', !automatic);
+            delay.disabled = !canChangeReveal || !automatic;
             if (document.activeElement !== delay) delay.value = String(S.roomState?.settings?.game?.revealDelay ?? DEFAULT_REVEAL_DELAY);
         }
         const modeEditable = S.connected && S.roomState?.phase === 'lobby';
@@ -94,7 +97,7 @@ export function createRoomSettings(context: AppContext) {
         const reveal = st?.settings?.game ? `<div class="field room-game-reveal"><label for="room-game-reveal">Answer reveal</label>
             <select id="room-game-reveal" aria-describedby="room-game-reveal-hint"><option value="all">All at once</option><option value="turns">One at a time</option><option value="auto">One at a time · automatic</option></select>
             <span class="hint" id="room-game-reveal-hint">Applies to the next reveal.</span></div>
-            <div class="field"><label for="room-game-reveal-delay">Automatic reveal interval (seconds)</label>
+            <div class="field room-game-reveal-interval"${st.settings.game.reveal === 'auto' ? '' : ' hidden'}><label for="room-game-reveal-delay">Automatic reveal interval (seconds)</label>
             <input type="number" id="room-game-reveal-delay" min="1" max="${MAX_REVEAL_DELAY}" step="1" inputmode="numeric" value="${st.settings.game.revealDelay ?? DEFAULT_REVEAL_DELAY}"></div>` : '';
         context.modal('Settings', modes + autoplay + verification + chat + reveal);
         const done=document.querySelector('.modal-actions [data-action="close-modal"]');if(done)done.textContent='Done';
@@ -183,11 +186,14 @@ export function createRoomSettings(context: AppContext) {
         forms: {'room-mode-form':{submit:savePlayMode,errorTarget:'#room-mode-error'}}, changes: [event => {
         if (event.target instanceof HTMLSelectElement && event.target.id === 'room-game-reveal') {
             if (S.room?.role === 'host' && S.roomState?.settings?.game) {
-                if (!context.send({type: 'game_reveal', reveal: event.target.value})) updateRoomSettings();
+                const mode = event.target.value;
+                if (context.send({type: 'game_reveal', reveal: mode})) updateRoomSettings(mode);
+                else updateRoomSettings();
             }
             return true;
         }
         if (event.target instanceof HTMLInputElement && event.target.id === 'room-game-reveal-delay') {
+            if (event.target.disabled) return true;
             const delay = event.target.valueAsNumber;
             if (S.room?.role === 'host' && S.roomState?.settings?.game && validRevealDelay(delay) &&
                 context.send({type: 'game_reveal', revealDelay: delay})) return true;

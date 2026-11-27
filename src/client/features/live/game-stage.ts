@@ -39,9 +39,10 @@ interface PlayerView {
     reason?: CompetitionReason;
     lives?: number;
     maximum: number;
-    loss: boolean;
-    current: boolean;
-    newReveal: boolean;
+    loss?: boolean;
+    current?: boolean;
+    newReveal?: boolean;
+    spectator?: boolean;
 }
 
 const verdicts: Partial<Record<CompetitionReason, string>> = {
@@ -56,15 +57,20 @@ let showLives = true;
 export function gameStageMarkup(state: DataRecord) {
     if (!state.settings?.game || (state.phase !== 'lobby' && state.phase !== 'reveal')) return '';
     const competition = state.competition;
-    const players: StagePlayer[] = competition?.stagePlayers ?? state.players ?? [];
+    const online: StagePlayer[] = (competition?.stagePlayers ?? state.players ?? []).filter(player => player.connected !== false);
+    const connected = new Set(online.map(player => player.id));
     const review = state.phase === 'reveal' ? competition?.review : null;
     const revealed = Math.max(0, Math.floor(Number(review?.revealed) || 0));
     const revealInTurns = review && (review.stage === 'revealing' || review.reveal === 'turns');
     // A host can receive later answers privately for moderation. Only place revealed answers on the stage.
     const rows: StageAnswer[] = review?.rows ?? [];
-    const visibleAnswers = revealInTurns ? rows.slice(0, revealed) : rows;
+    const visibleAnswers = (revealInTurns ? rows.slice(0, revealed) : rows).filter(row => connected.has(row.playerId));
     const hideHostPreview = review?.stage !== 'complete' && state.role === 'host';
     const answers = new Map(visibleAnswers.map(answer => [answer.playerId, answer]));
+    const lobby = state.phase === 'lobby';
+    const isSpectator = (player: StagePlayer) => !lobby && (player.spectating || player.eliminated && !answers.has(player.id));
+    const players = online.filter(player => !isSpectator(player));
+    const spectators = online.filter(isSpectator);
     const latest = revealInTurns ? visibleAnswers.at(-1) : undefined;
     const key = `${state.code}/${state.questionIndex ?? 'lobby'}`;
     const previous = lastFrame?.key === key ? lastFrame : undefined;
@@ -77,11 +83,11 @@ export function gameStageMarkup(state: DataRecord) {
     const sameTurn = previous?.revealed === visibleAnswers.length && !losses.size;
     const status = sameTurn && previous.summary ? previous.summary : summary;
     lastFrame = {key, revealed: visibleAnswers.length, charged, summary: status};
-    const progress = review && review.total > 0 && (revealInTurns || visibleAnswers.length > 0)
-        ? `${visibleAnswers.length} / ${Number(review.total)} revealed` : `${players.length}`;
+    const total = Number(review?.stageTotal ?? review?.total) || 0;
+    const progress = total > 0 && (revealInTurns || visibleAnswers.length > 0)
+        ? `${visibleAnswers.length} / ${total} revealed` : String(players.length);
     const hostAnswer = review?.stage === 'revealing' ? '' : review?.hostAnswer;
 
-    const lobby = state.phase === 'lobby';
     return `<section class="game-stage" aria-labelledby="game-stage-title"${showLives ? ' data-show-lives' : ''}>
         <div class="game-stage-heading">
             <div class="game-stage-title"><h2 id="game-stage-title"${lobby ? '' : ' class="sr-only"'}>${lobby ? 'Players' : 'Answers'}</h2><span>${esc(progress)}</span></div>
@@ -90,7 +96,7 @@ export function gameStageMarkup(state: DataRecord) {
         ${hostAnswer ? `<p class="game-stage-host-answer"><span>Host’s answer</span> <strong>${esc(hostAnswer)}</strong></p>` : ''}
         ${status ? `<div class="game-stage-update" data-stage-update="${esc(status.announcement)}"><strong dir="auto">${esc(status.answer)}</strong><span dir="auto">${esc(status.name)}</span></div>` : ''}
         <p class="sr-only" role="status" data-game-stage-announcement></p>
-        ${players.length ? `<ul id="game-stage-players" class="game-stage-players" role="list" aria-labelledby="game-stage-title" data-stage-key="${esc(key)}" tabindex="0">
+        ${players.length || spectators.length ? `<ul id="game-stage-players" class="game-stage-players" role="list" aria-labelledby="game-stage-title" data-stage-key="${esc(key)}" tabindex="0">
             ${players.map(player => {
                 const row = answers.get(player.id);
                 const team = competition?.teams?.sharedLives ? competition.teams.entries?.find(entry => entry.id === player.team) : null;
@@ -102,20 +108,23 @@ export function gameStageMarkup(state: DataRecord) {
                     loss: losses.has(player.id), current, newReveal: newReveal && (!revealInTurns || current)
                 });
             }).join('')}
-        </ul>` : '<p class="game-stage-empty">Waiting for players</p>'}
+            ${spectators.length ? `<li class="game-stage-spectator-heading" role="presentation"><h3>Spectators</h3></li>
+                ${spectators.map(player => playerMarkup(state, player, {maximum: 0, spectator: true})).join('')}
+            ` : ''}
+        </ul>` : lobby ? '<p class="game-stage-empty">Waiting for players</p>' : ''}
     </section>`;
 }
 
-function playerMarkup(state: DataRecord, player: StagePlayer, {row, reason, lives, maximum, loss, current, newReveal}: PlayerView) {
+function playerMarkup(state: DataRecord, player: StagePlayer, {row, reason, lives, maximum, loss, current, newReveal, spectator}: PlayerView) {
     const out = player.eliminated || player.spectating;
-    const presence = out ? 'Spectating' : player.connected === false ? 'Offline' : '';
+    const presence = out && !spectator ? 'Eliminated' : '';
     const meta = [player.id === state.me?.id ? 'You' : '', player.team ? competitionTeamName(player.team) : '', presence].filter(Boolean).join(' · ');
     const verdict = reason && verdicts[reason];
     const answer = row ? String(answerLabel(state, row.answer)) : '';
     const waiting = state.phase === 'reveal' && !row && !out && state.competition?.review?.stage === 'revealing';
     const removable = state.phase === 'lobby' && state.role === 'host' && player.id !== state.me?.id;
     const livesInHeader = state.phase === 'reveal' && player.id === state.me?.id && Number.isInteger(state.me.lives);
-    return `<li class="game-stage-player${current ? ' game-stage-current' : ''}${verdict ? ' game-stage-hit' : ''}${out ? ' game-stage-out' : ''}${loss ? ' game-stage-loss' : ''}" data-stage-player="${esc(player.id)}">
+    return `<li class="game-stage-player${current ? ' game-stage-current' : ''}${verdict ? ' game-stage-hit' : ''}${out ? ' game-stage-out' : ''}${loss ? ' game-stage-loss' : ''}${spectator ? ' game-stage-spectator' : ''}" data-stage-player="${esc(player.id)}">
         ${removable ? `<button id="game-stage-remove-${esc(player.id)}" class="icon-btn game-stage-remove" type="button" data-action="kick-player" data-id="${esc(player.id)}" data-name="${esc(player.name)}" aria-label="Remove ${esc(player.name)}" title="Remove ${esc(player.name)}" data-needs-connection>${icon('close', 14)}</button>` : ''}
         <div class="game-stage-avatar${current && newReveal && !loss ? ' game-stage-avatar-reveal' : ''}">${avatarMarkup(player.avatar, player.name, 'stage')}</div>
         <strong class="game-stage-name" title="${esc(player.name)}">${esc(player.name)}</strong>
@@ -160,12 +169,11 @@ export function toggleGameStageLives(button: HTMLElement) {
 
 export function preserveGameStageScroll(root: HTMLElement) {
     const previous = root.querySelector<HTMLElement>('#game-stage-players');
-    const key = previous?.dataset.stageKey;
-    const scrollTop = previous?.scrollTop;
+    const scrollTop = previous?.scrollTop ?? 0;
     const lastUpdate = root.querySelector<HTMLElement>('[data-stage-update]')?.dataset.stageUpdate;
     return () => {
         const next = root.querySelector<HTMLElement>('#game-stage-players');
-        if (previous && next && next.dataset.stageKey === key) {
+        if (previous && next && next.dataset.stageKey === previous.dataset.stageKey) {
             // Keep loaded portraits in place across reveal snapshots; only new or edited profiles need decoding.
             const portraits = new Map([...previous.querySelectorAll<HTMLElement>('[data-stage-player]')]
                 .map(slot => [slot.dataset.stagePlayer, slot.querySelector<HTMLElement>('.gather-avatar[data-avatar-ready]')]));
@@ -174,7 +182,7 @@ export function preserveGameStageScroll(root: HTMLElement) {
                 const current = slot.querySelector<HTMLElement>('.gather-avatar[data-avatar-profile]');
                 if (old && current && old.dataset.avatarProfile === current.dataset.avatarProfile) current.replaceWith(old);
             }
-            next.scrollTop = scrollTop || 0;
+            next.scrollTop = scrollTop;
         }
         const update = root.querySelector<HTMLElement>('[data-stage-update]')?.dataset.stageUpdate;
         const announcement = root.querySelector('[data-game-stage-announcement]');

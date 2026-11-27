@@ -21,6 +21,16 @@ export function createAppUi(context: AppContext) {
         requestAnimationFrame(() => $('.modal input, .modal button')?.focus());
         onSetup?.();
     }
-    function closeModal() { S.cancelUsageDelete?.(); S.cancelUsageDelete = null; $('#modal-root').innerHTML = ''; if(S.previousFocus?.isConnected)S.previousFocus.focus();else ([...document.querySelectorAll<HTMLButtonElement>('[data-action]')].find(button=>button.dataset.action===S.previousFocusAction) || document.querySelector<HTMLButtonElement>('[data-action=room-settings]'))?.focus(); }
+    function closeModal() {
+        S.cancelUsageDelete?.();
+        S.cancelUsageDelete = null;
+        $('#modal-root').innerHTML = '';
+        const previous = S.previousFocus;
+        const replacement = previous?.id ? document.getElementById(previous.id) : null;
+        if (previous?.isConnected) previous.focus();
+        else if (replacement) replacement.focus({preventScroll: true});
+        else ([...document.querySelectorAll<HTMLButtonElement>('[data-action]')].find(button => button.dataset.action === S.previousFocusAction)
+            || document.querySelector<HTMLButtonElement>('[data-action=room-settings]'))?.focus();
+    }
     return { refreshFeedback,get toastTimer() { return toastTimer; }, get app() { return app; }, get siteNews() { return siteNews; }, toast, nav, shell, loading, modal, closeModal };
 }

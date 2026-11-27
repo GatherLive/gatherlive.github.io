@@ -7,7 +7,7 @@ import {avatarMarkup, hydrateAvatars} from '../avatars/render.js';
 import {autoplayTimerMarkup, tickAutoplayTimer} from '../live/autoplay.js';
 import {competitionReviewPending} from '../live/competition.js';
 import {backToRoomSettings} from '../live/room-settings.js';
-export const CHAT_OPTIONS=[['off','Off'],['lobby','Lobby only'],['breaks','Between questions & rounds'],['rounds','Lobby & round breaks']];
+export const CHAT_OPTIONS=[['off','Off'],['lobby','Lobby and finish'],['breaks','Lobby, breaks & finish'],['rounds','Lobby & round breaks']];
 const EMOJI=['👍','❤️','😂','🎉','👏','😮'];
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export class RoomChat {
@@ -103,8 +103,8 @@ export class RoomChat {
   }
   setState(room) {
     const actor=this.actorId();
-    if(this.identity&&actor!==this.identity){
-      this.messages=[];this.draft='';this.replyTo=null;this.unread=0;this.mentioned.clear();this.mentions.reset();this.mentions.invalidate();this.hadConversation=false;this.reconnectPending=false;
+    if(!room||this.identity&&actor!==this.identity){
+      this.messages=[];this.draft='';this.replyTo=null;this.emojiFor=null;this.menuFor=null;this.unread=0;this.mentioned.clear();this.mentions.reset();this.mentions.invalidate();this.hadConversation=false;this.reconnectPending=false;
     }
     this.identity=actor;
     const changed=this.roomCount!==room?.participantCount||this.meta?.chatMentions!==room?.chat?.chatMentions;
@@ -112,7 +112,6 @@ export class RoomChat {
     this.meta=room?.chat??null;this.announcement=room?.announcement??null;
     if(['countdown','question','finished'].includes(room?.phase)&&document.querySelector<HTMLFormElement>('#announcement-form'))this.closeModal();
     if(room?.phase==='finished'){
-      this.messages=[];this.announcement=null;this.draft='';this.replyTo=null;this.emojiFor=null;this.menuFor=null;this.unread=0;this.mentioned.clear();this.mentions.reset();this.mentions.invalidate();this.hadConversation=false;this.reconnectPending=false;
       if(document.querySelector<HTMLFormElement>('#chat-settings-form,#chat-unlock-form,#autoplay-form'))this.closeModal();
     }
     if(this.meta?.unlocked&&document.querySelector<HTMLFormElement>('#chat-unlock-form')){this.closeModal();this.settings();}
@@ -121,7 +120,7 @@ export class RoomChat {
     if(changed)this.mentions.invalidate();
     if(!this.mentions.allowed())this.mentions.close();
   }
-  available() {return !this.state().fatalRoomError&&!this.state().roomState?.study&&!!this.meta?.open&&!['question','countdown','finished'].includes(this.state().roomState?.phase);}
+  available() {return !this.state().fatalRoomError&&!this.state().roomState?.study&&!!this.meta?.open&&!['question','countdown'].includes(this.state().roomState?.phase);}
   actorId() {return this.state().room?.role==='host'?'host':this.state().room?.playerId;}
   isHost() {return this.state().room?.role==='host';}
   request(type,body={}): Promise<DataRecord> {
@@ -141,14 +140,12 @@ export class RoomChat {
       return true;
     }
     if(data.type==='conversation'){
-      const finished=this.state().roomState?.phase==='finished';
       const previous=new Set(this.messages.map(item=>item.id));
-      const messages=finished||this.hidden?[]:data.state.messages;
+      const messages=this.hidden?[]:data.state.messages;
       if(this.reconnectPending&&this.hadConversation)for(const item of messages)if(!previous.has(item.id))this.noteUnread(item);
-      this.reconnectPending=false;this.hadConversation=!finished;
-      this.revision=data.state.revision;this.messages=messages;this.announcement=finished?null:data.state.announcement;this.meta=data.state.meta;this.emojiFor=null;this.menuFor=null;
+      this.reconnectPending=false;this.hadConversation=true;
+      this.revision=data.state.revision;this.messages=messages;this.announcement=data.state.announcement;this.meta=data.state.meta;this.emojiFor=null;this.menuFor=null;
     }else if(['chat_message','chat_reaction','chat_deleted','chat_cleared','chat_settings','announcement'].includes(data.type)){
-      if(this.state().roomState?.phase==='finished')return true;
       if(data.revision<=this.revision)return true;
       this.revision=data.revision;
       if(data.type==='chat_message'){
@@ -173,11 +170,11 @@ export class RoomChat {
   }
   tools() {
     const state=this.state(),room=state.roomState,phase=room?.phase;
-    if(!this.meta||phase==='finished'||state.fatalRoomError)return '';
+    if(!this.meta||state.fatalRoomError)return '';
     const host=this.isHost(),focus=['countdown','question'].includes(phase)||competitionReviewPending(room),disabled=state.connected?'':'disabled';
     const canPause=room?.autoplay?.status==='running'||(room?.autoplay?.status==='off'&&focus);
     const studyControl=canPause?`<button class="quiet-button" data-action="autoplay-pause" ${disabled}>Pause</button>`:'';
-    const hostTools=host?`<div class="room-host-tools">
+    const hostTools=host&&phase!=='finished'?`<div class="room-host-tools">
       <button class="quiet-button" data-action="room-settings">${this.icon('settings',16)} Settings</button>
       ${room?.study?studyControl:`<button class="quiet-button" data-action="announcement-compose" aria-label="Announcement" ${focus?'disabled':''}>${this.icon('announce',16)} Announce</button>`}
     </div>`:'';
@@ -215,6 +212,7 @@ export class RoomChat {
       </form></aside></div>`;
   }
   refresh() {
+    if(this.meta&&this.state().fatalRoomError)this.setState(null);
     this.syncConnection();
     if(this.open&&!this.available())this.close();
     this.typing.sync();

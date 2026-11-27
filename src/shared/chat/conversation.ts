@@ -7,6 +7,7 @@ export const CHAT_MODES = new Set(['off','lobby','breaks','rounds']);
 export const REACTIONS = ['👍','❤️','😂','🎉','👏','😮'];
 const TYPING_DURATION_MS = 6500;
 const TYPING_REFRESH_MIN_MS = 2500;
+export type ConversationPhase = RoomPhase | 'disabled';
 const fail = (message) => { const error = new Error(message); error.name = 'EngineError'; throw error; };
 const copy = value => JSON.parse(JSON.stringify(value));
 const text = (value, max) => {
@@ -37,15 +38,16 @@ export class RoomConversation {
     this.rates=new Map();this.roomRate={at:0,count:0};
   }
   serialize() { return copy({config:this.config,messages:this.messages,announcement:this.announcement,revision:this.revision}); }
-  end() {this.messages=[];this.announcement=null;this.rates.clear();this.roomRate={at:0,count:0};this.revision++;}
-  visibleAnnouncement(phase) {return ['countdown','question','finished'].includes(phase)?null:copy(this.announcement);}
-  metadata(phase) {
+  finish() {if(this.announcement){this.announcement=null;this.revision++;}}
+  visibleAnnouncement(phase: ConversationPhase) {return ['countdown','question','finished','disabled'].includes(phase)?null:copy(this.announcement);}
+  metadata(phase: ConversationPhase) {
     const mode=this.config.chatMode;
-    const open=this.unlocked&&mode!=='off'&&!['countdown','question','finished'].includes(phase)&&(phase==='lobby'||mode==='breaks'||mode==='rounds'&&phase==='round_results');
+    const open=this.unlocked&&mode!=='off'&&!['countdown','question','disabled'].includes(phase)&&
+      (phase==='lobby'||phase==='finished'||mode==='breaks'||mode==='rounds'&&phase==='round_results');
     return {...this.config,unlocked:this.unlocked,open,revision:this.revision,typingIndicators:true};
   }
   // Typing activity belongs to the live connection and expires without a room timer.
-  updateTyping(identity: RoomIdentity, message: DataRecord, phase: RoomPhase, players: ReadonlyMap<string, RoomPlayer>, now: number): ChatTypingEvent | null {
+  updateTyping(identity: RoomIdentity, message: DataRecord, phase: ConversationPhase, players: ReadonlyMap<string, RoomPlayer>, now: number): ChatTypingEvent | null {
     if (!identity.role || identity.conversationVersion !== 1) return null;
     if (typeof message.viewing === 'boolean') {
       identity.chatViewing = message.viewing && this.metadata(phase).open;
@@ -85,9 +87,9 @@ export class RoomConversation {
   counts(message: ChatMessage) {
     const counts={};for(const emoji of Object.values(message.reactions))counts[emoji]=(counts[emoji]??0)+1;return counts;
   }
-  snapshot(identity, phase) {
+  snapshot(identity: RoomIdentity, phase: ConversationPhase, announcementPhase=phase) {
     const actorId=identity.role==='host'?'host':identity.playerId;
-    return {revision:this.revision,meta:this.metadata(phase),announcement:this.visibleAnnouncement(phase),messages:identity.chatSubscribed===false||!this.unlocked||phase==='finished'?[]:this.messages.map(message=>this.publicMessage(message,actorId))};
+    return {revision:this.revision,meta:this.metadata(phase),announcement:this.visibleAnnouncement(announcementPhase),messages:identity.chatSubscribed===false||!this.unlocked||phase==='disabled'?[]:this.messages.map(message=>this.publicMessage(message,actorId))};
   }
   rate(actor, kind, now) {
     const key=actor.id+':'+kind,entry=this.rates.get(key)??{at:now,count:0,last:-Infinity};
@@ -98,11 +100,11 @@ export class RoomConversation {
     if(this.roomRate.count>=25)fail('Chat is busy. Try again in a moment.');
     entry.last=now;entry.count++;this.rates.set(key,entry);this.roomRate.count++;
   }
-  command(identity: RoomIdentity, message: DataRecord, {phase,players,now,hostPlayerId=null,hostAvatar=null}): DataRecord {
+  command(identity: RoomIdentity, message: DataRecord, {phase,announcementPhase=phase,players,now,hostPlayerId=null,hostAvatar=null}): DataRecord {
     const actor=this.actor(identity,players,hostAvatar),host=actor.role==='host';
     const requestId=typeof message.requestId==='string'&&/^[a-zA-Z0-9-]{1,80}$/.test(message.requestId)?message.requestId:null;
     if(!requestId)fail('A message reference is required.');
-    if(phase==='finished')fail('This quiz has ended. Chat has been cleared.');
+    if(phase==='disabled'||phase==='finished'&&['chat_settings','chat_unlock','announce'].includes(message.type))fail('This action is unavailable in this room.');
     let event;
     if(['chat_send','chat_react'].includes(message.type)&&!this.metadata(phase).open)fail('Chat is closed for this part of the quiz.');
     if(message.type==='chat_members'){
@@ -140,7 +142,7 @@ export class RoomConversation {
     }else{
       if(!host)fail('Only the host can do that.');
       if(message.type==='announce'){
-        if(['countdown','question'].includes(phase))fail('Send announcements between questions.');
+        if(['countdown','question'].includes(announcementPhase))fail('Send announcements between questions.');
         const body=message.text===''?'':text(message.text,240);
         const countdown=body?announcementCountdown(body,now):null;
         this.rate(actor,'announce',now);

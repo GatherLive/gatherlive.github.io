@@ -1,6 +1,7 @@
 import {pinRegion} from '../../core/pin-regions.js';
 import {questionAwardsPoints} from '../../core/live-game.js';
 import {resultHasPoints, startingLives} from './lives.js';
+import type {Standing} from '../../../shared/types.js';
 /** Pure report calculations, shared by the host view and every export. */
 export const OPINION_TYPES = new Set(['poll','open_ended','word_cloud','slide']);
 export const isGradedQuestion = q => q.competition?.mode === 'unique' || q.competition?.mode === 'avoid-host' || !OPINION_TYPES.has(q.type);
@@ -40,6 +41,7 @@ export function resultStatus(q,a,eligible=true){
 export function analyze(report,participantId=''){
   const all=report.players||[], players=participantId?all.filter(p=>p.id===participantId):all;
   const maxLives=startingLives(report),winners=new Set((report.competition?.winners??report.winners??[]).map(player=>player.id));
+  const rankedByElimination=maxLives>0&&report.competition?.rankedByElimination===true;
   const teamScoring=report.settings?.competition?.teams?.scoring??report.competition?.teams?.scoring;
   const roundLives=new Map<string,Map<string,number>>((report.roundResults??[]).map(round=>[
     round.id,new Map((round.leaderboard??[]).map(player=>[player.id,player.lives]))
@@ -68,18 +70,23 @@ export function analyze(report,participantId=''){
   const roundsWithPoints=new Set((report.roundResults??[]).filter(resultHasPoints).map(round=>round.id));
   for(const stat of questionStats)if(stat.round&&stat.hasPoints)roundsWithPoints.add(stat.round.id);
   const hasPoints=resultHasPoints(report)||questionStats.some(stat=>stat.hasPoints)||(report.players??[]).some(player=>(player.overallScore??player.score)>0);
-  const standings=new Map<string,{id: string; score: number; rank: number; lives?: number}>((report.overallLeaderboard||report.leaderboard||[]).map(p=>[p.id,p]));
+  const standings=new Map<string,Standing>((report.overallLeaderboard||report.leaderboard||[]).map(p=>[p.id,p]));
   const participantStats=players.map((p,playerIndex)=>{
     const rows=questionStats.filter(s=>s.q.type!=='slide').map(s=>({q:s.q,round:s.round,...s.rows[playerIndex]}));
     const present=rows.filter(r=>r.eligible),answered=present.filter(r=>r.answer),graded=present.filter(r=>isGradedQuestion(r.q));
     const correct=graded.filter(r=>r.answer?.correct===true).length;
     const standing=standings.get(p.id);
+    const rank=Number.isSafeInteger(standing?.rank)&&standing.rank>0?standing.rank:null;
     const rounds=(report.settings?.roundsEnabled?report.settings.rounds||[]:[]).map(r=>({id:r.id,title:r.title,lives:roundLives.get(r.id)?.get(p.id),hasPoints:roundsWithPoints.has(r.id),score:rows.filter(row=>r.questionIds.includes(row.q.id)).reduce((s,row)=>s+(row.answer?.awarded?row.answer.points:0),0)}));
-    return {player:p,rows,rounds,lives:p.lives??standing?.lives,winner:winners.has(p.id),answered:answered.length,eligible:present.length,correct,incorrect:graded.filter(r=>r.answer&&r.answer.correct!==true).length,missed:present.length-answered.length,accuracy:percent(correct,graded.length),score:p.overallScore??standing?.score??p.score??0,rank:standing?.rank??null,averageTime:answered.length?answered.reduce((s,r)=>s+r.answer.elapsed,0)/answered.length:null};
-  }).sort((a,b)=>(maxLives?(Number(b.winner)-Number(a.winner)||(b.lives??-1)-(a.lives??-1)):b.score-a.score)||a.player.name.localeCompare(b.player.name));
+    return {player:p,rows,rounds,lives:p.lives??standing?.lives,elimination:standing?.elimination,winner:winners.has(p.id),answered:answered.length,eligible:present.length,correct,incorrect:graded.filter(r=>r.answer&&r.answer.correct!==true).length,missed:present.length-answered.length,accuracy:percent(correct,graded.length),score:p.overallScore??standing?.score??p.score??0,rank,averageTime:answered.length?answered.reduce((s,r)=>s+r.answer.elapsed,0)/answered.length:null};
+  }).sort((a,b)=>{
+    const order=rankedByElimination?(a.rank??Infinity)-(b.rank??Infinity):
+      maxLives?Number(b.winner)-Number(a.winner)||(b.lives??-1)-(a.lives??-1):b.score-a.score;
+    return order||a.player.name.localeCompare(b.player.name);
+  });
   const eligible=questionStats.filter(s=>s.q.type!=='slide').reduce((s,q)=>s+q.eligible,0),answered=questionStats.reduce((s,q)=>s+q.answered,0),graded=questionStats.filter(s=>s.graded).reduce((s,q)=>s+q.eligible,0),correct=questionStats.reduce((s,q)=>s+q.correct,0),incorrect=questionStats.reduce((s,q)=>s+q.incorrect,0);
   const elapsed=questionStats.reduce((s,q)=>s+(q.averageTime??0)*q.answered,0);
-  return {report,players,questions,questionStats,participantStats,maxLives,hasPoints,eligible,answered,correct,incorrect,missed:eligible-answered,accuracy:percent(correct,graded),responseRate:percent(answered,eligible),averageTime:answered?elapsed/answered:null,averageScore:players.length?participantStats.reduce((s,p)=>s+p.score,0)/players.length:null};
+  return {report,players,questions,questionStats,participantStats,maxLives,hasPoints,rankedByElimination,eligible,answered,correct,incorrect,missed:eligible-answered,accuracy:percent(correct,graded),responseRate:percent(answered,eligible),averageTime:answered?elapsed/answered:null,averageScore:players.length?participantStats.reduce((s,p)=>s+p.score,0)/players.length:null};
 }
 export function reportBase(report,participant=null){
   const date=new Date(report.finishedAt||report.createdAt||Date.now()).toISOString().slice(0,10);

@@ -174,3 +174,19 @@
   }
   @keyframes game-stage-heart-out { 35% { transform: translateY(-3px) scale(1.18); color: var(--red); } }
 }
+.game-stage-spectator-heading {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  padding: 8px 0 2px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+}
+.game-stage-spectator-heading h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 550;
+}
+.game-stage-player.game-stage-spectator {
+  border-color: var(--line);
+  background: transparent;
+}

@@ -18,7 +18,7 @@ export const POLICIES = {
     sections: [
       { title: 'Information used', text: 'Account details, quizzes, images, participant names, answers, results, chat and access requests support the service. Hosts can view and download participant results; shared names, responses and chat may be visible to others.' },
       { title: 'On your device', text: 'Essential storage keeps sign-in, reconnect details, preferences. No advertising or analytics cookies; security services may use essential cookies.' },
-      { title: 'Storage and deletion', text: 'Chat clears when a quiz ends. Unsaved results expire after 15 minutes; unfinished rooms after 24 hours. Pending access requests expire after 90 days and reviewed requests after 30 days. Saved data stays until deleted. Delete your account in Settings; host downloads remain outside our control.' },
+      { title: 'Storage and deletion', text: 'Chat and unsaved results expire 15 minutes after a quiz ends. Unfinished rooms expire after 24 hours. Pending access requests expire after 90 days and reviewed requests after 30 days. Saved data stays until deleted. Delete your account in Settings; host downloads remain outside our control.' },
       { title: 'Providers and your choices', text: 'Supabase stores accounts and saved data, Cloudflare runs live quizzes and security, GitHub Pages hosts the site, and Proton Mail handles contact emails. Providers may process technical details, backups and data in other countries.' }
     ]
   }

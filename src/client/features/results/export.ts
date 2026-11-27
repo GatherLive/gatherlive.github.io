@@ -10,7 +10,7 @@ const dateValue=report=>new Date(report.finishedAt||report.createdAt||Date.now()
 const reportDate=report=>dateValue(report).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
 const participantLabel=(report,participant,options)=>options.names?participant.name:`Participant ${(report.players||[]).findIndex(p=>p.id===participant.id)+1}`;
 const cellText=value=>typeof value==='number'?number(value):String(value??'');
-const numericColumn=(header,index)=>index>0&&['Points','Lives remaining','Accuracy','Correct','Incorrect','Missed','Answered','Average time','Time'].includes(header);
+const numericColumn=(header,index)=>index>0&&['Rank','Points','Lives remaining','Accuracy','Correct','Incorrect','Missed','Answered','Average time','Time'].includes(header);
 async function reportLogo(){if(!logo)logo=logoPromise().catch(error=>{logo=null;throw error;});return logo;}
 // Kept as a public helper for existing integrations. Reports use compact, labelled bars.
 export function ringSVG(value,label,dark=false){
@@ -22,12 +22,14 @@ function sectionsFor(report,options,participantId=''){
   if(personal&&!learner)throw new Error('This participant is not in the report.');
   const label=p=>participantLabel(report,p,options),graded=data.questionStats.filter(q=>q.graded),gradedMissed=graded.reduce((sum,q)=>sum+q.missed,0);
   const lives=data.maxLives,showLives=options.scores&&lives>0,showPoints=options.scores&&(!lives||data.hasPoints);
+  const showRanks=showLives&&data.rankedByElimination;
   const metricHeaders=[...(showLives?['Lives remaining']:[]),...(showPoints?['Points']:[])];
   const metricCells=(p,points=true)=>[...(showLives?[livesText(p?.lives)]:[]),...(showPoints?[points?p?.score??0:'']:[])];
   const roundMetric=r=>showLives?[livesText(r?.lives),...(showPoints&&r?.hasPoints?[`${number(r.score)} pts`]:[])].join(' · '):r?.score??0;
   if(options.summary){
     const metrics=personal?[
       ...(graded.length?[['Accuracy',percent(data.accuracy)]]:[]),['Answered',`${data.answered} / ${data.eligible}`],
+      ...(showRanks&&learner.rank?[['Rank',number(learner.rank)]]:[]),
       ...(showLives?[['Lives remaining',livesText(learner.lives)]]:[]),
       ...(showPoints&&(lives||graded.length)?[['Points',number(learner.score)]]:[]),
       ...(lives&&learner.winner?[['Outcome','Winner']]:[]),...(options.timing?[['Average time',seconds(data.averageTime)]]:[])
@@ -44,7 +46,7 @@ function sectionsFor(report,options,participantId=''){
   }
   if(options.participants){
     if(personal){if(!options.summary)blocks.push({kind:'totals',text:[`${learner.correct} correct · ${learner.incorrect} incorrect · ${learner.missed} unanswered`]});}
-    else blocks.push({title:'Participants',rows:[['Participant','Accuracy','Answered',...metricHeaders,...(showLives?['Winner']:[]),...(options.timing?['Average time']:[])],...data.participantStats.map(p=>[label(p.player),percent(p.accuracy),`${p.answered} / ${p.eligible}`,...metricCells(p),...(showLives?[p.winner?'Yes':'']:[]),...(options.timing?[seconds(p.averageTime)]:[])])]});
+    else blocks.push({title:'Participants',rows:[['Participant',...(showRanks?['Rank']:[]),'Accuracy','Answered',...metricHeaders,...(showLives?['Winner']:[]),...(options.timing?['Average time']:[])],...data.participantStats.map(p=>[label(p.player),...(showRanks?[p.rank??'—']:[]),percent(p.accuracy),`${p.answered} / ${p.eligible}`,...metricCells(p),...(showLives?[p.winner?'Yes':'']:[]),...(options.timing?[seconds(p.averageTime)]:[])])]});
   }
   if(options.rounds&&report.settings?.roundsEnabled){
     if(personal)blocks.push({title:'Round results',rows:[['Round',...(options.scores?metricHeaders:['Responses'])],...learner.rounds.map(r=>[r.title,...(options.scores?metricCells(r,!lives||r.hasPoints):[learner.rows.filter(row=>row.round?.id===r.id&&row.answer).length])])]});

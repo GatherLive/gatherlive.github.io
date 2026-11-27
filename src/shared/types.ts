@@ -26,7 +26,7 @@ export interface CompetitionRow {
   playerId: string; name: string; answer: AnswerValue | null; reason: CompetitionReason; accepted?: boolean; lostLife?: boolean; note?: string;
 }
 export interface CompetitionReview {
-  questionId: string; rows: CompetitionRow[]; revealed: number; applied: boolean;
+  id?: string; questionId: string; rows: CompetitionRow[]; revealed: number; applied: boolean;
   reveal?: AnswerReveal;
   autoRevealAt?: number;
 }
@@ -72,13 +72,14 @@ export interface Quiz {
   created_at?: string; updated_at?: string; hosted_at?: string; last_hosted_at?: string;
 }
 export interface PlayerAnswer { answer: AnswerValue; elapsed: number; correct: boolean; points: number; awarded: boolean; receivedAt?: number; reviewNote?: string }
+export interface Elimination { question: number; turn?: number }
 export interface RoomPlayer {
   id: string; name: string; resumeToken: string; score: number; overallScore: number;
   joinedAt: number; connected: boolean; answers: Record<string, PlayerAnswer>;
   mediaVersion?: number; mediaReady?: string; mediaReadyToken?: string; kicked?: boolean; lastSeenAt?: number;
-  lives?: number; team?: TeamId; joinOrder?: number; avatar?: AvatarProfile;
+  lives?: number; team?: TeamId; joinOrder?: number; avatar?: AvatarProfile; elimination?: Elimination;
 }
-export interface Standing { id: string; name: string; score: number; rank?: number; correct?: number; connected?: boolean; lives?: number; team?: TeamId }
+export interface Standing { id: string; name: string; score: number; rank?: number; correct?: number; connected?: boolean; lives?: number; team?: TeamId; elimination?: Elimination }
 export interface RoundResult {
   id: string; index: number; title: string; reward: string; leaderboard: Standing[];
   winners: Standing[]; tied: boolean; completedAt: number; tiedLeaders?: Standing[]; tieResolvedAt?: number;

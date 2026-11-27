@@ -6,6 +6,7 @@ import {competitionMode, competitionQuestionHint, competitionRevealView, competi
 import {avatarMarkup, hydrateAvatars} from '../avatars/render.js';
 import {lifeStandings, resultHasPoints, resultMetrics, startingLives} from '../results/lives.js';
 import {gameStageMarkup, preserveGameStageScroll} from './game-stage.js';
+import {preserveAnswerReviewScroll} from './answer-review.js';
 
 export function createFeaturesLivePage(context: AppContext) {
     const S = context.state;
@@ -62,11 +63,10 @@ export function createFeaturesLivePage(context: AppContext) {
                 ${content}${roomFooter(st, isHost)}
             </div>`;
         const restoreStage = preserveGameStageScroll(context.app);
-        const openReview = context.app.querySelector<HTMLDetailsElement>('.game-answer-review')?.open;
+        const restoreReview = preserveAnswerReviewScroll(context.app);
         context.app.innerHTML = lobby ? layout : `<div class="live-room-layout">${layout}</div>`;
         restoreStage();
-        const reviewPanel = context.app.querySelector<HTMLDetailsElement>('.game-answer-review');
-        if (reviewPanel && openReview) reviewPanel.open = true;
+        restoreReview();
         hydrateAvatars(context.app);
         context.siteNews.render();
         context.updateRoomSettings();

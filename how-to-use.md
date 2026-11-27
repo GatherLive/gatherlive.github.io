@@ -158,13 +158,13 @@ Choose **Live game** under **Game settings › Game type** to give everyone an a
 
 Names and answers appear after submissions close. Choose **All at once**, **One at a time**, or **One at a time · automatic** under **Answer reveal**. Set an interval of 1–30 seconds in quiz or room settings, and use **Pause auto reveal** to resume manual turns. Both players lose a life when their matching answers are revealed.
 
-During play the header shows your remaining hearts. Tap the room code to copy it. The game finish screen and **Detailed results** show winners and remaining lives when lives are enabled.
+During play the header shows your remaining hearts. Tap the room code to copy it. Scroll past the active players to see spectator cards in the same list. In elimination games, numbered final standings put survivors first, followed by the players eliminated last. Players eliminated together share a rank. **Detailed results** and downloads include the final ranks.
 
 ### Competition
 
 Open **Game settings › Competition** to set starting lives and choose when they reset. Players with zero lives watch until the next reset. When a challenge ends with multiple survivors, they share the win.
 
-- **Don’t Repeat Each Other** flags blank and repeated answers. In a Live game, open **Review answers** to approve an answer, post a note, or reject it as incorrect. Choose a quick reply or write your own. Visible notes appear with the answer and in Detailed results. Choose **Apply results** to finish the review.
+- **Don’t Repeat Each Other** flags blank and repeated answers. Use the check and cross controls in **Review answers** to approve or reject all submitted answers. When rejecting an individual answer, tap a quick reply or write a note. **Copy for AI** copies the question and numbered answers. Paste the AI’s JSON code block in **Paste JSON**. You can revise decisions before choosing **Apply results**. Review notes also appear in Detailed results.
 - **Don’t Say the Same Thing as Me** uses the secret text or choice saved with the question. The room locks that answer when hosted. Matching or blank answers cost one life.
 - In a standard quiz, **Answer reveal** controls named sharing for each question. Autoplay waits for the host when a reveal or review needs their input.
 - **Teams** supports different capacities, such as one versus twelve. Choose automatic assignment or let players pick. Team points use the average across each team’s starting roster. Team elimination supports individual or shared lives.
@@ -197,13 +197,13 @@ A code can only be used once.
 In the quiz editor, open **Game settings › Room chat** and choose:
 
 - **Off**
-- **Lobby only**
-- **Between questions & rounds**
+- **Lobby and finish**
+- **Lobby, breaks & finish**
 - **Lobby & round breaks**
 
 You can also turn **Replies**, **Emoji reactions** and **Participant mentions** on or off. Participant mentions are off by default.
 
-Chat is always closed during the countdown, during a question, and after the quiz ends.
+Chat stays closed during countdowns and questions. Choose **Lobby, breaks & finish** to open it during answer reveals. Enabled chat stays open for 15 minutes after the quiz ends.
 The host can clear all chat messages or remove a single message.
 When chat is open, a hint above the message box shows who is typing.
 
@@ -211,7 +211,7 @@ When chat is open, a hint above the message box shows who is typing.
 
 Type **@** in an open chat to choose a name. The host can also use **@all** to mention everyone. Participants can mention other people only when **Participant mentions** is enabled; they cannot mention **@all**.
 
-The list supports tapping a name, arrow keys and Enter or Tab. Press Escape to close it. A badge on **Chat** marks unread mentions. Only the person mentioned sees their name highlighted; other people see normal text. Hiding chat stops its mention badges. The chat button is available only when the host allows chat. Messages and announcements are cleared when the quiz ends.
+The list supports tapping a name, arrow keys and Enter or Tab. Press Escape to close it. A badge on **Chat** marks unread mentions. Only the person mentioned sees their name highlighted; other people see normal text. Hiding chat stops its mention badges. The chat button is available only when the host allows chat. Announcements clear at the end. Chat messages are deleted when the room expires.
 
 ---
 

@@ -2,10 +2,10 @@ import {makeJoinCode,sameJoinCode,JOIN_CODE_PERIOD} from '../rooms/join-verifica
 import {normalizeAvatar, type AvatarProfile} from '../avatars/profile.js';
 import type {Quiz, Question, GameSettings, RoomPhase, RoomMode, RoomPlayer, RoomIdentity, Standing, RoundResult, ImageAsset, MediaGate, RoomAutoplay, DataRecord, CompetitionSettings, CompetitionReview, CompetitionRow, CompetitionReason, TeamId} from '../types.js';
 import {createImagePlan, imageSource} from '../media/room-media.js';
-import {RoomConversation,chatSettings,CONVERSATION_COMMANDS} from '../chat/conversation.js';
-import {AUTOPLAY_IDLE_MS, AUTOPLAY_IMAGE_WAIT_MS, AUTOPLAY_SLIDE_MS, ROOM_LIFETIME_MS, defaultAutoplay, validAutoplayOptions} from '../rooms/autoplay.js';
+import {RoomConversation,chatSettings,CONVERSATION_COMMANDS,type ConversationPhase} from '../chat/conversation.js';
+import {AUTOPLAY_IDLE_MS, AUTOPLAY_IMAGE_WAIT_MS, AUTOPLAY_SLIDE_MS, ROOM_LIFETIME_MS, FINISHED_RETENTION_MS, defaultAutoplay, validAutoplayOptions} from '../rooms/autoplay.js';
 import {validPinRegion,pinInside,pinRegion} from '../../client/core/pin-regions.js';
-import {DEFAULT_REVEAL_DELAY, MAX_REVIEW_NOTE_LENGTH, questionAwardsPoints, validRevealDelay} from '../../client/core/live-game.js';
+import {DEFAULT_REVEAL_DELAY, MAX_REVIEW_NOTE_LENGTH, REVIEW_QUICK_REPLIES, questionAwardsPoints, reviewableAnswer, validRevealDelay} from '../../client/core/live-game.js';
 /** Server-authoritative, transport-independent live quiz engine. */
 export class EngineError extends Error {
   declare code: string;
@@ -352,6 +352,7 @@ export class RoomEngine {
     this._limitCompetitionSeats();
     this.competitionEntrants=new Set(raw.competitionEntrants??[]);
     this.competitionReview=clone(raw.competitionReview??null);
+    if(this.competitionReview&&!this.competitionReview.applied)this.competitionReview.id??=crypto.randomUUID();
     this.competitionRoster=Array.isArray(raw.competitionRoster)?new Set(raw.competitionRoster):null;
     this.competitionJoinOrder=raw.competitionJoinOrder??0;
     this.competitionRevealCount=raw.competitionRevealCount??0;
@@ -385,7 +386,7 @@ export class RoomEngine {
     this.winners = clone(raw.winners ?? []);
     this.drawnPlayerIds = new Set(raw.drawnPlayerIds ?? []);
     this.draws = clone(raw.draws ?? []);
-    if(this.phase==='finished')this.conversation.end();
+    if(this.phase==='finished')this.conversation.finish();
   }
   serialize({ includePlayers = true, includeConversation = true } = {}) {
     const competition=this.settings.competition||this.settings.game?{
@@ -408,9 +409,16 @@ export class RoomEngine {
     if(mode==='self-study'&&this.settings.competition?.teams)fail('INVALID_SETTINGS','Use a live room for teams.');
   }
   get isSelfStudy() {return this.mode==='self-study';}
-  get chatPhase(): RoomPhase {
-    if(this.isSelfStudy)return 'finished';
-    return this.competitionReview&&!this.competitionReview.applied?'question':this.phase;
+  get chatPhase(): ConversationPhase {
+    if(this.isSelfStudy||this.phase==='finished'&&this.finishedAt!=null&&this.now()>=this.finishedAt+FINISHED_RETENTION_MS)return 'disabled';
+    return this.phase;
+  }
+  get announcementPhase(): ConversationPhase {
+    const phase=this.chatPhase;
+    return phase==='reveal'&&this.competitionReview&&!this.competitionReview.applied?'question':phase;
+  }
+  conversationSnapshot(identity: RoomIdentity) {
+    return this.conversation.snapshot(identity,this.chatPhase,this.announcementPhase);
   }
   playerIdFor(identity: RoomIdentity) {
     if(identity.role==='host')return identity.userId===this.ownerId?this.hostPlayerId:null;
@@ -675,6 +683,7 @@ export class RoomEngine {
       if(index>=0){
         review.rows.splice(index,1);
         if(index<review.revealed)review.revealed--;
+        review.id=crypto.randomUUID();
       }
     }
   }
@@ -828,7 +837,10 @@ export class RoomEngine {
     for(const player of this.players.values())player.score=0;
     const competition=this.settings.competition;
     if(competition?.livesReset==='round'&&competition.lives){
-      for(const player of this.players.values())player.lives=competition.lives;
+      for(const player of this.players.values()){
+        player.lives=competition.lives;
+        delete player.elimination;
+      }
       if(this.teamLives)this.teamLives={a:competition.lives,b:competition.lives};
     }
     this._standings=null;
@@ -859,7 +871,7 @@ export class RoomEngine {
     if(message.type==='avatar_update')return this._updateAvatar(identity,message.avatar);
     if(CONVERSATION_COMMANDS.has(message.type)){
       if(identity?.role==='host'&&identity.userId!=null&&identity.userId!==this.ownerId)fail('FORBIDDEN','Only the host can control this quiz.');
-      return this.conversation.command(identity,message,{phase:this.chatPhase,players:this.players,now:this.now(),hostPlayerId:this.hostPlayerId,hostAvatar:this.hostAvatar});
+      return this.conversation.command(identity,message,{phase:this.chatPhase,announcementPhase:this.announcementPhase,players:this.players,now:this.now(),hostPlayerId:this.hostPlayerId,hostAvatar:this.hostAvatar});
     }
     if (identity?.role === 'player') {
       if (message.type !== 'answer') fail('FORBIDDEN', 'Only the host can control the quiz.');
@@ -913,6 +925,7 @@ export class RoomEngine {
       case 'next': return this._next();
       case 'next_round': return this._nextRound();
       case 'competition_review':
+      case 'competition_review_batch':
       case 'competition_reveal':
       case 'competition_auto_reveal':
       case 'competition_apply':
@@ -1012,8 +1025,9 @@ export class RoomEngine {
   _finish() {
     if(this.settings.competition)this.winners=this._competitionWinners(this._leaderboard(),this._winningTeams(true));
     this._setPhase('finished');
+    this._standings=null;
     Object.assign(this.autoplay,{status:'off',pausedAt:null});
-    this.deadline=null;this.finishedAt=this.now();this.conversation.end();this._touch();
+    this.deadline=null;this.finishedAt=this.now();this.conversation.finish();this._touch();
   }
   _answer(playerId, message) {
     if(this.autoplay.clockPaused)fail('INVALID_PHASE',this.isSelfStudy?'Resume your practice to answer.':'Wait for the host to resume.');
@@ -1077,24 +1091,32 @@ export class RoomEngine {
     player.overallScore=(player.overallScore??player.score-answer.points)+answer.points;
     answer.awarded=true;
   }
-  _deductLife(player: RoomPlayer) {
+  _deductLife(player: RoomPlayer, turn?: number) {
     const lives=this._lives(player);
     if(!lives)return false;
-    if(this.teamLives&&player.team)this.teamLives[player.team]=lives-1;
-    else player.lives=lives-1;
+    const elimination=lives===1?{question:this.questionIndex+1,...(turn?{turn}:{})}:null;
+    if(this.teamLives&&player.team){
+      this.teamLives[player.team]=lives-1;
+      if(elimination)for(const member of this.players.values()){
+        if(member.team===player.team&&this.competitionRoster?.has(member.id))member.elimination=elimination;
+      }
+    }else{
+      player.lives=lives-1;
+      if(elimination)player.elimination=elimination;
+    }
     return true;
   }
-  _chargeReviewLife(row: CompetitionRow) {
+  _chargeReviewLife(row: CompetitionRow, turn?: number) {
     if(row.lostLife!==undefined)return;
     const player=this.players.get(row.playerId);
-    row.lostLife=!!player&&this._deductLife(player);
+    row.lostLife=!!player&&this._deductLife(player,turn);
   }
   _revealTurn(review: CompetitionReview) {
     const row=review.rows[review.revealed++];
     const mode=questionRule(this.question);
     if(review.reveal!=='turns')return;
     if((row.reason==='blank'||row.reason==='wrong')&&(mode!=='classic'||!OPINION.has(this.question.type))){
-      this._chargeReviewLife(row);
+      this._chargeReviewLife(row,review.revealed);
     }
     if(mode==='unique'&&typeof row.answer==='string'){
       const key=competitiveText(row.answer);
@@ -1103,13 +1125,13 @@ export class RoomEngine {
       if(matched.length){
         for(const repeated of [...matched,row]){
           repeated.reason='duplicate';
-          this._chargeReviewLife(repeated);
+          this._chargeReviewLife(repeated,review.revealed);
         }
       }
     }
     if(review.revealed===review.rows.length){
       delete review.autoRevealAt;
-      if(mode!=='unique')this._applyReview();
+      if(mode!=='unique')this._applyReview(review.revealed);
     }else if(review.autoRevealAt!==undefined)review.autoRevealAt=this._scheduleReveal();
     this._standings=null;
   }
@@ -1144,20 +1166,22 @@ export class RoomEngine {
       else if(!unique&&key===match)reason='host-match';
       return {playerId:player.id,name:player.name,answer,reason};
     });
-    this.competitionReview={questionId:q.id,rows,revealed:turns?0:rows.length,applied:false,
+    this.competitionReview={...(unique?{id:crypto.randomUUID()}:{}),questionId:q.id,rows,revealed:turns?0:rows.length,applied:false,
       ...(reveal?{reveal}:{}),
       ...(gameReveal==='auto'&&rows.length?{autoRevealAt:this._scheduleReveal()}:{})};
     if((!unique&&!turns)||!rows.length)this._applyReview();
   }
-  _applyReview() {
+  _applyReview(revealTurn?: number) {
     const review=this.competitionReview;
     if(!review||review.applied)return;
     const classic=questionRule(this.question)==='classic';
+    // Applying a manual review is a separate step after the last revealed answer.
+    const turn=review.reveal==='turns'?(revealTurn??review.revealed+1):undefined;
     for(const row of review.rows){
       const player=this.players.get(row.playerId);
       if(!player)continue;
       const safe=row.reason==='safe';
-      if(!safe&&(!classic||!OPINION.has(this.question.type)))this._chargeReviewLife(row);
+      if(!safe&&(!classic||!OPINION.has(this.question.type)))this._chargeReviewLife(row,turn);
       const answer=Object.hasOwn(player.answers,review.questionId)?player.answers[review.questionId]:null;
       if(answer&&row.note)answer.reviewNote=row.note;
       if(answer&&!answer.awarded){
@@ -1187,19 +1211,18 @@ export class RoomEngine {
       if(review.reveal!=='turns'||review.revealed>=review.rows.length||typeof message.enabled!=='boolean')fail('INVALID_COMMAND','Choose a turn-by-turn reveal.');
       if(message.enabled)review.autoRevealAt??=this._scheduleReveal();
       else delete review.autoRevealAt;
-    }else if(message.type==='competition_review'){
-      const row=review.rows.find(row=>row.playerId===message.playerId);
-      const hasDecision=typeof message.accepted==='boolean', hasNote=message.note!==undefined;
-      if(questionRule(this.question)!=='unique'||(!hasDecision&&!hasNote)||!row||
-        review.reveal==='turns'&&review.revealed<review.rows.length||!['safe','rejected'].includes(row.reason))fail('INVALID_COMMAND','Choose a submitted answer to approve or reject.');
-      if(hasNote){
-        if(!this.settings.game||typeof message.note!=='string'||message.note.length>MAX_REVIEW_NOTE_LENGTH||
-          /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(message.note))fail('INVALID_COMMAND','Enter a short review note.');
-        row.note=message.note.trim()||undefined;
-      }
-      if(hasDecision){
-        row.accepted=message.accepted;
-        row.reason=message.accepted?'safe':'rejected';
+    }else if(message.type==='competition_review'||message.type==='competition_review_batch'){
+      if(questionRule(this.question)!=='unique'||review.revealed<review.rows.length)fail('REVIEW_PENDING','Reveal every answer before reviewing.');
+      if(message.type==='competition_review_batch'){
+        if(!review.id||message.reviewId!==review.id)fail('STALE_REVIEW','This review changed. Copy the current answers again.');
+        this._reviewBatch(review.rows.filter(reviewableAnswer),message);
+      }else{
+        const row=review.rows.find(row=>row.playerId===message.playerId);
+        const hasDecision=typeof message.accepted==='boolean', hasNote=message.note!==undefined;
+        if((!hasDecision&&!hasNote)||!row||!reviewableAnswer(row))fail('INVALID_COMMAND','Choose a submitted answer to approve or reject.');
+        if(hasNote&&(!this.settings.game||typeof message.note!=='string'||message.note.length>MAX_REVIEW_NOTE_LENGTH||
+          /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(message.note)))fail('INVALID_COMMAND','Enter a short review note.');
+        this._setReviewDecision(row,hasDecision?message.accepted:undefined,hasNote?message.note:undefined);
       }
     }else{
       if(review.revealed<review.rows.length)fail('REVIEW_PENDING','Reveal every answer before applying lives.');
@@ -1207,6 +1230,31 @@ export class RoomEngine {
     }
     this._touch();
     return {type:'competition_updated'};
+  }
+  _setReviewDecision(row: CompetitionRow, accepted?: boolean, note?: string) {
+    const reason=accepted===undefined?row.reason:accepted?'safe':'rejected';
+    if(note!==undefined)row.note=note.trim()||undefined;
+    else if(reason!==row.reason)delete row.note;
+    if(accepted!==undefined){row.accepted=accepted;row.reason=reason;}
+  }
+  _reviewBatch(rows: CompetitionRow[], message: DataRecord) {
+    if(message.all==='approve'||message.all==='reject'){
+      for(const row of rows)this._setReviewDecision(row,message.all==='approve');
+      return;
+    }
+    const decisions=message.decisions;
+    if(!Array.isArray(decisions)||!decisions.length||decisions.length>rows.length)fail('INVALID_COMMAND','Choose at least one submitted answer to review.');
+    const used=new Set<number>();
+    const changes=decisions.map(decision=>{
+      if(!Array.isArray(decision)||decision.length!==3)fail('INVALID_COMMAND','Invalid answer review.');
+      const [index,accepted,reply]=decision;
+      if(!Number.isInteger(index)||index<1||index>rows.length||used.has(index)||typeof accepted!=='boolean'||
+        !Number.isInteger(reply)||reply<0||reply>REVIEW_QUICK_REPLIES.length||reply&&!this.settings.game)
+        fail('INVALID_COMMAND','Invalid answer or quick reply in the review.');
+      used.add(index);
+      return {row:rows[index-1],accepted,note:REVIEW_QUICK_REPLIES[reply-1]??''};
+    });
+    for(const {row,accepted,note} of changes)this._setReviewDecision(row,accepted,note);
   }
   _reveal() {
     const q = this.question;
@@ -1304,6 +1352,7 @@ export class RoomEngine {
     if(this.phase==='round_results'||this.phase==='reveal'&&(!this.competitionReview||this.competitionReview.applied))state.gameDecided=this._competitionGameDecided();
     if(this.phase==='finished'&&settings){
       state.winners=this.winners;
+      if(this._ranksByElimination())state.rankedByElimination=true;
       const winningTeams=this._winningTeams(true);
       if(winningTeams)state.winningTeams=winningTeams;
     }
@@ -1319,6 +1368,7 @@ export class RoomEngine {
       const resultRows=rows.map(({playerId,name,answer,reason,accepted,lostLife,note})=>{
         const publicReason=review.applied||gameTurns&&lostLife!==undefined?reason:null;
         return {playerId,name,answer,...(forHost||publicReason?{reason}:{}),
+          connected:this.players.get(playerId)?.connected===true,
           ...(forHost&&gameTurns?{publicReason}:{}),...(lostLife!==undefined?{lostLife}:{}),
           ...(forHost&&accepted!==undefined?{accepted}:{}),...(note?{note}:{})};
       });
@@ -1327,6 +1377,8 @@ export class RoomEngine {
       const hostAnswer=optionIndex>=0?(q.options[optionIndex].text||`Choice ${optionIndex+1}`):secret;
       state.review={
         stage:review.applied?'complete':revealing?'revealing':'review',total:review.rows.length,revealed:review.revealed,...(review.reveal?{reveal:review.reveal}:{}),
+        ...(forHost&&!review.applied&&!revealing&&review.id?{id:review.id}:{}),
+        ...(game?{stageTotal:review.rows.filter(row=>this.players.get(row.playerId)?.connected).length}:{}),
         ...(forHost&&revealing&&gameTurns?{automatic:review.autoRevealAt!==undefined}:{}),
         rows:resultRows,canReview:forHost&&!review.applied&&questionRule(q)==='unique',...(hostAnswer?{hostAnswer}:{})
       };
@@ -1335,14 +1387,36 @@ export class RoomEngine {
       for(const player of this.players.values()){
         if(!Object.hasOwn(player.answers,q.id))continue;
         const answer=player.answers[q.id].answer;
-        rows.push({playerId:player.id,name:player.name,answer:!forHost&&typeof answer==='string'&&answer.length>200?answer.slice(0,200)+'…':answer});
+        rows.push({playerId:player.id,name:player.name,connected:player.connected,answer:!forHost&&typeof answer==='string'&&answer.length>200?answer.slice(0,200)+'…':answer});
       }
       state.review={stage:'complete',total:rows.length,revealed:rows.length,rows};
     }
     return state;
   }
+  _ranksByElimination() {
+    const competition=this.settings.competition;
+    return !!competition?.lives&&competition.teams?.scoring!=='points';
+  }
+  _eliminationStandings(): Standing[] {
+    const compare=(a: Standing,b: Standing)=>
+      Number(b.lives>0)-Number(a.lives>0)||
+      (b.elimination?.question??0)-(a.elimination?.question??0)||
+      (b.elimination?.turn??0)-(a.elimination?.turn??0);
+    const entries=[...this.players.values()].filter(player=>this.competitionRoster?.has(player.id)).map(player=>{
+      const lives=this._lives(player);
+      return {id:player.id,name:player.name,score:player.overallScore??player.score,lives,
+        ...(player.team?{team:player.team}:{}),...(lives===0&&player.elimination?{elimination:player.elimination}:{})};
+    }).sort((a,b)=>compare(a,b)||b.lives-a.lives||a.name.localeCompare(b.name)||a.id.localeCompare(b.id));
+    let rank=0;
+    return entries.map((entry,index)=>{
+      if(!entry.lives&&!entry.elimination)return entry;
+      if(!index||compare(entries[index-1],entry))rank=index+1;
+      return {...entry,rank};
+    });
+  }
   _leaderboard() {
     if (this._standings) return this._standings;
+    if(this.phase==='finished'&&this._ranksByElimination())return this._standings=this._eliminationStandings();
     let rank = 0;
     let previousScore = null;
     this._standings = [...this.players.values()].sort((a, b) => b.score - a.score || a.joinedAt - b.joinedAt || a.id.localeCompare(b.id)).map((p, index) => {
@@ -1382,6 +1456,11 @@ export class RoomEngine {
       if(row)me.competitionReason=row.reason;
     }
     if(this.phase==='finished'||this.isSelfStudy&&this.hostPlayerId===playerId)me.overallScore=player.overallScore;
+    if(this.phase==='finished'&&this._ranksByElimination()){
+      const placement=this._leaderboard().find(standing=>standing.id===playerId);
+      if(placement)Object.assign(me,{rank:placement.rank,elimination:placement.elimination});
+      else me.spectating=true;
+    }
     if (answer) {
       me.answer = clone(answer.answer);
       if ((this.phase === 'reveal' || this.phase === 'finished')&&(!this.competitionReview||this.competitionReview.applied)) Object.assign(me, { correct: answer.correct, points: answer.points });
@@ -1420,7 +1499,8 @@ export class RoomEngine {
     const answerCount = this.phase === 'question' && q ? activePlayers.filter(player => Object.hasOwn(player.answers, q.id)).length : this._answerCount;
     // Public live updates stay bounded even with large rooms; reports retain every standing.
     const roundResults = this.roundResults.map((round) => ({ ...round, leaderboard: forHost ? round.leaderboard : this.settings.showLeaderboard ? round.leaderboard.slice(0, 10) : [] }));
-    const result: DataRecord = { code: this.code, title: this.quiz.title, phase: this.phase, role: forHost ? 'host' : playerId ? 'player' : 'spectator', questionIndex: this.questionIndex, totalQuestions: this.quiz.questions.length, round: this._round(), roundResults: clone(roundResults), question, deadline: this.deadline, serverNow: this.now(), players, participantCount: activePlayers.length, leaderboard: this.settings.showLeaderboard || forHost || this.phase === 'finished' ? clone(forHost ? this._leaderboard() : this._leaderboard().slice(0, 10)) : [], answerCount, settings: clone(this.settings), locked: this.locked, winners: clone(this.winners) };
+    const showStandings = forHost || this.settings.showLeaderboard || this.phase === 'finished' && !this._ranksByElimination();
+    const result: DataRecord = { code: this.code, title: this.quiz.title, phase: this.phase, role: forHost ? 'host' : playerId ? 'player' : 'spectator', questionIndex: this.questionIndex, totalQuestions: this.quiz.questions.length, round: this._round(), roundResults: clone(roundResults), question, deadline: this.deadline, serverNow: this.now(), players, participantCount: activePlayers.length, leaderboard: showStandings ? clone(forHost ? this._leaderboard() : this._leaderboard().slice(0, 10)) : [], answerCount, settings: clone(this.settings), locked: this.locked, winners: clone(this.winners) };
     const {status,startsAt,clockPaused,pausedAt,options,pauseReason}=this.autoplay;
     result.mode=this.mode;
     if(this.hostAvatar&&forHost)result.hostAvatar=this.hostAvatar;
@@ -1448,7 +1528,7 @@ export class RoomEngine {
     if(media&&this.phase!=='question')result.imageManifest=this.phase==='finished'?[]:this.imageManifest();
     const me = this._me(playerId);
     if (me) result.me = me;
-    if(conversation){result.chat=this.conversation.metadata(this.chatPhase);result.announcement=this.conversation.visibleAnnouncement(this.chatPhase);}
+    if(conversation){result.chat=this.conversation.metadata(this.chatPhase);result.announcement=this.conversation.visibleAnnouncement(this.announcementPhase);}
     if (question && media) {
       const keys = new Map();
       const prepare = value => {
@@ -1466,7 +1546,8 @@ export class RoomEngine {
     if(this.phase==='finished'&&competition?.lives>0){
       result.hasPoints=this._hasResultPoints();
       if(forHost||this.settings.showLeaderboard)
-        competition.lifeStandings=this._leaderboard().map(({id,name,lives,score})=>({id,name,lives,score:this.players.get(id)?.overallScore??score}));
+        competition.lifeStandings=this._ranksByElimination()?this._leaderboard():
+          this._leaderboard().map(({id,name,lives,score})=>({id,name,lives,score:this.players.get(id)?.overallScore??score}));
     }
     if(competition)result.competition=clone(competition);
     return result;
@@ -1497,7 +1578,7 @@ export class RoomEngine {
   report() {
     if (this.phase !== 'finished') fail('INVALID_PHASE', 'Finish the quiz to view its report.');
     let rank = 0, previous = null;
-    const overallLeaderboard = [...this.players.values()].sort((a,b)=>(b.overallScore??b.score)-(a.overallScore??a.score)||a.joinedAt-b.joinedAt||a.id.localeCompare(b.id)).map((p,index)=>{
+    const overallLeaderboard = this._ranksByElimination()?this._leaderboard():[...this.players.values()].sort((a,b)=>(b.overallScore??b.score)-(a.overallScore??a.score)||a.joinedAt-b.joinedAt||a.id.localeCompare(b.id)).map((p,index)=>{
       const score=p.overallScore??p.score;
       if(score!==previous)rank=index+1;
       previous=score;

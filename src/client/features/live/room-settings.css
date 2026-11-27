@@ -20,3 +20,4 @@
 .room-mode-option strong { display: block; font-size: 14px; font-weight: 550; }
 .room-mode-option small { display: block; color: var(--muted); margin-top: 4px; font-size: 12px; }
 .room-game-reveal { margin: 14px 0 0; }
+.room-game-reveal-interval[hidden] { display: none; }

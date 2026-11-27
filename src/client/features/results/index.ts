@@ -13,7 +13,7 @@ const rate = n => n == null ? '—' : n + '%';
 const PAGE = 25, RESPONSE_PAGE = 10;
 const defaults = { summary: true, participants: true, questions: true, responses: false, correct: true, explanations: true, rounds: true, scores: true, timing: false, charts: false, names: true, theme: 'dark', format: 'pdf' };
 export function mountResults(root, { report, saved = false, onSave = null, back = '#dashboard', onNotice = null, backIcon = icon('back', 14), isActive = () => root.isConnected }) {
-    const data = analyze(report), state = { tab: 'overview', responseView: 'questions', question: 0, student: '', sort: 'name', sortDirection: 'ascending', roundPage: 0, positions: {}, search: '', responseSearch: '', page: 0, responsePage: 0, notice: '', error: false, saved, saving: false, exporting: false, cancel: false, customOpen: false, scope: 'whole', pies: {}, options: { ...defaults } };
+    const data = analyze(report), state = { tab: 'overview', responseView: 'questions', question: 0, student: '', sort: data.rankedByElimination ? 'rank' : 'name', sortDirection: 'ascending', roundPage: 0, positions: {}, search: '', responseSearch: '', page: 0, responsePage: 0, notice: '', error: false, saved, saving: false, exporting: false, cancel: false, customOpen: false, scope: 'whole', pies: {}, options: { ...defaults } };
     const pies = overviewPies(data);
     const unbindPies = bindPieCharts(root, { models: pies, selections: state.pies, onSelect: (id, key) => { state.pies[id] = key; } });
     let expiryTimer, lastCardKey = '';

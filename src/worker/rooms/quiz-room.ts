@@ -47,15 +47,14 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
         const saved=JSON.parse(parts.length?parts.map(p=>p.data).join(''):row.state);
         this.engine=RoomEngine.restore(saved);
         const conversation=ctx.storage.sql.exec<{data: string}>('SELECT data FROM conversation_chunks ORDER BY part').toArray();
-        if(this.engine.phase==='finished')ctx.storage.sql.exec('DELETE FROM conversation_chunks');
-        else if(conversation.length)this.engine.conversation=new RoomConversation(this.engine.settings,JSON.parse(conversation.map(p=>p.data).join('')),{unlocked:this.engine.chatUnlocked});
+        if(conversation.length)this.engine.conversation=new RoomConversation(this.engine.settings,JSON.parse(conversation.map(p=>p.data).join('')),{unlocked:this.engine.chatUnlocked});
+        if(this.engine.phase==='finished')this.engine.conversation.finish();
         const playerParts=new Map();
         for(const part of ctx.storage.sql.exec<{id: string; data: string}>('SELECT id,data FROM player_chunks ORDER BY id,part').toArray()){if(!playerParts.has(part.id))playerParts.set(part.id,[]);playerParts.get(part.id).push(part.data);}
         for(const player of ctx.storage.sql.exec<{id: string; data: string}>('SELECT id,data FROM players').toArray()){
           const encoded=player.data==='null'?(playerParts.get(player.id)||[]).join(''):player.data;
           this.engine.restorePlayer(JSON.parse(encoded));this.savedPlayers.set(player.id,encoded);
         }
-        if(this.engine.phase==='finished'&&(saved.conversation?.messages?.length||saved.conversation?.announcement))this.checkpoint();
       }
       if(this.engine){
         const lastSavedAt=this.engine.updatedAt;
@@ -105,7 +104,6 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
   }
   writeConversation() {
     this.ctx.storage.sql.exec('DELETE FROM conversation_chunks');
-    if(this.engine.phase==='finished')return;
     chunks(JSON.stringify(this.engine.conversation.serialize())).forEach((part,index)=>this.ctx.storage.sql.exec('INSERT INTO conversation_chunks(part,data) VALUES(?,?)',index,part));
   }
   saveConversation() {this.ctx.storage.transactionSync(()=>this.writeConversation());}
@@ -215,9 +213,9 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
   }
   send(ws,body) {try{ws.send(typeof body==='string'?body:JSON.stringify(body));}catch{}}
   sendState(ws,identity) {this.send(ws,{type:'state',state:this.engine.snapshot(identity.role==='host',this.engine.playerIdFor(identity),{media:identity.mediaVersion||false,conversation:identity.conversationVersion===1})});}
-  sendConversation(ws,identity) {if(identity.conversationVersion===1)this.send(ws,{type:'conversation',state:this.engine.conversation.snapshot(identity,this.engine.chatPhase)});}
+  sendConversation(ws,identity) {if(identity.conversationVersion===1)this.send(ws,{type:'conversation',state:this.engine.conversationSnapshot(identity)});}
   broadcastConversation(event) {
-    if(!event||!this.engine||this.engine.phase==='finished')return;
+    if(!event||!this.engine||this.purging||this.expiresAt()<=Date.now())return;
     const packet=JSON.stringify(event);
     for(const ws of this.ctx.getWebSockets()){
       const identity=ws.deserializeAttachment();
@@ -338,7 +336,7 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
       }
       if(message.type==='join_code_request'){
         if(identity.role!=='host'||identity.userId!==this.meta.ownerId)throw new HttpError(403,'Only the host can view the join verification code.');
-        if(this.engine.settings.joinVerification&&this.engine.chatPhase!=='finished')this.send(ws,{type:'join_code',roomCode:this.engine.code,...await this.engine.joinChallenge()});
+        if(this.engine.settings.joinVerification&&!['finished','disabled'].includes(this.engine.chatPhase))this.send(ws,{type:'join_code',roomCode:this.engine.code,...await this.engine.joinChallenge()});
         return;
       }
       if(message.type==='ping'){this.send(ws,{type:'pong',...(typeof message.id==='string'&&message.id.length<=80?{id:message.id,serverReceivedAt}:{}),serverNow:Date.now()});return;}
@@ -356,7 +354,7 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
       if(message.type==='chat_unlock'){
         if(identity.role!=='host'||identity.userId!==this.meta.ownerId)throw new HttpError(403,'Only the host can unlock chat.');
         if(typeof message.requestId!=='string'||!/^[a-zA-Z0-9-]{1,80}$/.test(message.requestId))throw new HttpError(400,'A message reference is required.');
-        if(['countdown','question','finished'].includes(this.engine.chatPhase))throw new HttpError(409,'Unlock chat in a live quiz before starting or between questions.');
+        if(['countdown','question','finished','disabled'].includes(this.engine.announcementPhase))throw new HttpError(409,'Unlock chat in a live quiz before starting or between questions.');
         const engine=this.engine,roomId=this.meta.reportId;
         if(!engine.chatUnlocked){
           const remote=await poolUnlockChat(this.env,this.meta.ownerId,message.code);

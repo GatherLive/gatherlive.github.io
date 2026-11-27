@@ -1,6 +1,15 @@
 export const DEFAULT_REVEAL_DELAY = 3;
 export const MAX_REVEAL_DELAY = 30;
 export const MAX_REVIEW_NOTE_LENGTH = 120;
+export const REJECTION_QUICK_REPLIES = [
+    'Doesn’t match the question', 'Wrong category', 'Not a valid example', 'Outside the time period',
+    'Answer is incomplete', 'Please be more specific'
+] as const;
+export const REVIEW_QUICK_REPLIES = [...REJECTION_QUICK_REPLIES, 'Spelling accepted', 'Alternative accepted'] as const;
+
+export function reviewableAnswer(row: {reason?: string}) {
+    return row.reason === 'safe' || row.reason === 'rejected';
+}
 
 export function validRevealDelay(value: unknown): value is number {
     return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= MAX_REVEAL_DELAY;

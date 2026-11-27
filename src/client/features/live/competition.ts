@@ -1,6 +1,7 @@
 import type {DataRecord} from '../../../shared/types.js';
 import {esc} from '../../core/dom.js';
 import {icon} from '../../core/icons.js';
+import {reviewableAnswer} from '../../core/live-game.js';
 
 const TEAM_NAMES = {a: 'Team A', b: 'Team B'};
 export const competitionTeamName = (team: 'a' | 'b') => TEAM_NAMES[team];
@@ -82,7 +83,9 @@ export function competitionRevealView(state: DataRecord, isHost: boolean) {
     const pending = competitionReviewPending(state);
     const reviewing = isHost && review.stage === 'review' && competitionMode(state) === 'unique';
     const game = !!state.settings?.game;
-    const rows = game ? reviewing ? (review.rows ?? []).filter(row => ['safe','rejected'].includes(row.reason)) : [] : review.rows ?? [];
+    const rows = reviewing ? (review.rows ?? []).filter(reviewableAnswer)
+        : game ? [] : (review.rows ?? []).filter(row => row.connected !== false);
+    const canReview = reviewing && rows.length > 0;
     const count = Number(review.revealed) || 0, total = Number(review.total) || 0;
     const progress = !game && review.stage === 'revealing' ? `<span class="muted">${count} / ${total}</span>` : '';
     const hostAnswer = !game && review.hostAnswer != null
@@ -99,24 +102,38 @@ export function competitionRevealView(state: DataRecord, isHost: boolean) {
     if (game && !rows.length && !action) return '';
     return `<section class="competition-review" aria-label="${game ? 'Reveal controls' : 'Answer reveal'}">
         ${hostAnswer}
-        ${game && reviewing && rows.length ? '<details class="game-answer-review"><summary>Review answers</summary>' : ''}
-        ${!game && (rows.length || progress) ? `<div class="competition-review-heading"><h2>Answers</h2>${progress}</div>` : ''}
+        ${canReview ? `<details class="game-answer-review" data-answer-review="${esc(review.id ?? state.code + '/' + state.question?.id)}">
+            <summary>Review answers</summary>
+            ${review.id ? `<div class="competition-review-tools">
+                <div class="competition-review-bulk" role="group" aria-label="Review all answers">
+                    <button class="quiet-button" type="button" id="approve-all-answers" data-action="competition-review-all" data-verdict="approve" title="Approve all" aria-label="Approve all" data-needs-connection>${icon('check', 17)}</button>
+                    <button class="quiet-button" type="button" id="reject-all-answers" data-action="competition-review-all" data-verdict="reject" title="Reject all" aria-label="Reject all" data-needs-connection>${icon('close', 17)}</button>
+                </div>
+                <div>
+                    <button class="quiet-button" type="button" id="copy-answer-review" data-action="competition-copy-review">${icon('copy', 16)} Copy for AI</button>
+                    <button class="quiet-button" type="button" id="paste-answer-review" data-action="competition-paste-review" data-needs-connection>Paste JSON</button>
+                </div>
+            </div>` : ''}
+        ` : ''}
+        ${!game && !canReview && (rows.length || progress) ? `<div class="competition-review-heading"><h2>Answers</h2>${progress}</div>` : ''}
         ${rows.length ? `<ul class="competition-answers">${rows.map((row, index) => {
-            const choice = reviewing && ['safe','rejected'].includes(row.reason);
-            const last = review.stage === 'revealing' && index === (isHost ? count - 1 : rows.length - 1);
+            const choice = canReview;
+            const last = review.stage === 'revealing' && row === (isHost ? review.rows[count - 1] : rows.at(-1));
             const label = REASONS[row.reason] ?? (row.accepted === false ? 'Rejected' : row.accepted === true ? 'Accepted' : '');
+            const verdictClass = label === REASONS.safe ? ' is-accepted' : label === REASONS.rejected ? ' is-rejected' : '';
             return `<li class="competition-answer${last ? ' competition-answer-enter' : ''}">
-                <div><span class="competition-answer-name">${esc(row.name)}${row.playerId === state.me?.id ? ' (you)' : ''}</span>
+                <div><span class="competition-answer-name">${choice && review.id ? (index + 1) + '. ' : ''}${esc(row.name)}${row.playerId === state.me?.id ? ' (you)' : ''}</span>
                 <strong>${esc(answerLabel(state, row.answer) || '—')}</strong>
                 ${row.note ? `<p class="game-review-note" dir="auto">${esc(row.note)}</p>` : ''}</div>
-                ${label ? `<span class="competition-verdict">${esc(label)}</span>` : ''}
+                ${label ? `<span class="competition-verdict${verdictClass}">${esc(label)}</span>` : ''}
                 ${choice ? `<div class="competition-review-actions">
                     <button class="quiet-button" type="button" id="approve-${esc(row.playerId)}" data-action="competition-approve" data-id="${esc(row.playerId)}" aria-label="Approve ${esc(row.name)}’s answer" aria-pressed="${row.accepted === true}" data-needs-connection>${icon('check', 16)} Approve</button>
-                    <button class="quiet-button" type="button" id="reject-${esc(row.playerId)}" data-action="${game ? 'competition-note' : 'competition-reject'}" data-id="${esc(row.playerId)}" aria-label="${game ? 'Review' : 'Reject'} ${esc(row.name)}’s answer" ${game ? '' : `aria-pressed="${row.accepted === false}"`} data-needs-connection>${game ? 'Review' : icon('close', 16) + ' Reject'}</button>
+                    <button class="quiet-button" type="button" id="reject-${esc(row.playerId)}" data-action="competition-reject" data-id="${esc(row.playerId)}" aria-label="Reject ${esc(row.name)}’s answer" aria-pressed="${row.accepted === false}" data-needs-connection>${icon('close', 16)} Reject</button>
+                    ${game ? `<button class="quiet-button" type="button" id="note-${esc(row.playerId)}" data-action="competition-note" data-id="${esc(row.playerId)}" aria-label="Post a note for ${esc(row.name)}’s answer" title="Post note" data-needs-connection>${icon('chat', 16)}</button>` : ''}
                 </div>` : ''}
             </li>`;
         }).join('')}</ul>` : ''}
-        ${game && reviewing && rows.length ? '</details>' : ''}
+        ${canReview ? '</details>' : ''}
         ${action ? `<div class="competition-review-footer">${action}</div>` : ''}
     </section>`;
 }

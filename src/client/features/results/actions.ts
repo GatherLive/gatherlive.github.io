@@ -13,7 +13,12 @@ export function createFeaturesResultsActions(context: AppContext) {
     const renderDashboard = (...args) => context.renderDashboard(...args);
     const toast = (...args) => context.toast(...args);
     return { actions: {
-            'report-csv': async el => { const report = await context.loadSavedReport(el.dataset.id); download(`${slug(report.quiz_title || 'quiz')}-results.csv`, csvFor(report.results?.leaderboard || report.results?.players || (Array.isArray(report.results) ? report.results : []), report.results?.roundResults || [], startingLives(report.results ?? {}), report.results?.competition?.winners ?? report.results?.winners ?? [], resultHasPoints(report.results ?? {})), 'text/csv;charset=utf-8'); },
+            'report-csv': async el => {
+                const report = await context.loadSavedReport(el.dataset.id), results = report.results ?? {};
+                const ranked = results.competition?.rankedByElimination === true;
+                const standings = (ranked ? results.overallLeaderboard : results.leaderboard) ?? results.players ?? (Array.isArray(results) ? results : []);
+                download(`${slug(report.quiz_title || 'quiz')}-results.csv`, csvFor(standings, results.roundResults || [], startingLives(results), results.competition?.winners ?? results.winners ?? [], resultHasPoints(results), ranked), 'text/csv;charset=utf-8');
+            },
             'report-view': async el => { const item = S.reports.find(r => r.id === el.dataset.id); if (item?.isDetailed) {
                 location.hash = '#results/saved/' + item.id;
                 return;

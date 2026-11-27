@@ -24,7 +24,16 @@
   font-size: 13px;
 }
 .life-result-list li strong { min-width: 0; overflow-wrap: anywhere; }
+.life-result-ranked li strong { flex: 1; }
+.life-result-rank {
+  flex: 0 0 24px;
+  color: var(--muted);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
 .life-result-list small { font-weight: 400; color: var(--muted); }
+.life-result-tie { display: block; margin-top: 2px; }
+.life-result-list .life-result-winner { color: var(--green); }
 .result-lives {
   display: inline-flex;
   flex: none;
@@ -48,5 +57,6 @@
 .result-eliminated { flex: none; color: var(--muted); font-size: 12px; }
 .life-round-history > summary { cursor: pointer; font-size: 13px; padding-block: 12px; }
 .report-winner { display: block; margin-top: 4px; color: var(--accent); font-size: 12px; }
+.report-placement { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
 .report-life-outcome { margin: 0 0 14px; }
 .report-life-outcome p { margin-top: 6px; overflow-wrap: anywhere; }

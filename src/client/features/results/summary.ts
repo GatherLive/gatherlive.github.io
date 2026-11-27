@@ -30,21 +30,23 @@ export function createFeaturesResultsSummary(context: AppContext) {
         const history = `<div class="round-history">${rounds.map(r => `<section class="card round-history-card"><div class="row between"><h2>${esc(r.title)}</h2>${r.reward ? `<span class="round-reward">${icon('trophy', 15)} ${esc(r.reward)}</span>` : ''}</div><div class="round-history-winners">${r.winners?.length ? r.winners.map(p => esc(p.name)).join(' · ') : 'No winner'}${r.tied ? ' <span class="muted">(tied)</span>' : ''}</div>${show ? `<details><summary>${lives ? 'Lives remaining' : 'Leaderboard'}</summary>${lives ? lifeStandings(r.leaderboard || [], lives, {points: resultHasPoints(r)}) : leaderboard(r.leaderboard || [])}</details>` : ''}</section>`).join('')}</div>`;
         return lives ? `<details class="life-round-history"><summary>Round results</summary>${history}</details>` : history;
     }
-    function csvFor(players, rounds = [], lives = 0, winners = [], hasPoints = false) {
+    function csvFor(players, rounds = [], lives = 0, winners = [], hasPoints = false, ranked = false) {
         const points = !lives || hasPoints || resultHasPoints({leaderboard: players, roundResults: rounds});
-        const columns = [...(lives ? [] : ['Rank']), 'Player', ...(lives ? ['Lives remaining'] : []), ...(points ? ['Points'] : [])];
-        const playerCells = (player, index, showPoints = true) => [
-            ...(lives ? [] : [player.rank ?? index + 1]), player.name,
-            ...(lives ? [livesText(player.lives)] : []), ...(points ? [showPoints ? player.score ?? 0 : ''] : [])
+        const columns = [...(!lives || ranked ? ['Rank'] : []), 'Player', ...(lives ? ['Lives remaining'] : []), ...(ranked ? ['Eliminated on question'] : []), ...(points ? ['Points'] : [])];
+        const playerCells = (player, index, showPoints = true, overall = true) => [
+            ...(!lives ? [player.rank ?? index + 1] : ranked ? [overall ? player.rank ?? '' : ''] : []), player.name,
+            ...(lives ? [livesText(player.lives)] : []), ...(ranked ? [overall ? player.elimination?.question ?? '' : ''] : []),
+            ...(points ? [showPoints ? player.score ?? 0 : ''] : [])
         ];
         const winnerCell = (player, winners) => winners.some(winner => winner.id === player.id) ? 'Yes' : '';
+        const overallRows = () => players.map((player, index) => [
+            ...playerCells(player, index), ...(lives ? [winnerCell(player, winners)] : [])
+        ]);
         return rounds.length
-            ? csv([['Round', 'Reward', ...columns, 'Winner'], ...rounds.flatMap(round => (round.leaderboard ?? []).map((player, index) => [
-                round.title, round.reward, ...playerCells(player, index, !lives || resultHasPoints(round)), winnerCell(player, round.winners ?? [])
+            ? csv([['Round', 'Reward', ...columns, 'Winner'], ...(ranked ? overallRows().map(row => ['Overall', '', ...row]) : []), ...rounds.flatMap(round => (round.leaderboard ?? []).map((player, index) => [
+                round.title, round.reward, ...playerCells(player, index, !lives || resultHasPoints(round), false), winnerCell(player, round.winners ?? [])
             ]))])
-            : csv([[...columns, ...(lives ? ['Winner'] : [])], ...players.map((player, index) => [
-                ...playerCells(player, index), ...(lives ? [winnerCell(player, winners)] : [])
-            ])]);
+            : csv([[...columns, ...(lives ? ['Winner'] : [])], ...overallRows()]);
     }
     return { leaderboard, resultsView, roundHistory, csvFor };
 }

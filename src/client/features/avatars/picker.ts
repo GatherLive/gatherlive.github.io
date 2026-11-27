@@ -9,6 +9,7 @@ import {AVATAR_STYLES, loadDiceBear, normalizeAvatar} from './providers/browser.
 const storageKey = 'gather-avatar-v1';
 const boringColors = ['#92a1c6', '#146a7c', '#f0ab3d', '#c271b4', '#c20d90'];
 const backgroundColor = '#252525';
+const shuffleHistoryLimit = 30;
 const diceBear = (styles: string[]) => styles.map(style => 'dicebear:' + style);
 const styleGroups = [
     {name: 'People', styles: [
@@ -78,6 +79,7 @@ export function openAvatarPicker(context: AppContext, supplied: unknown, save: (
     let draft: AvatarProfile = normalizeAvatar(supplied) ?? readAvatarProfile() ?? {style: 'dicebear:critters', seed: randomSeed()};
     let previewRevision = 0;
     let settingsRevision = 0;
+    const past: AvatarProfile[] = [], future: AvatarProfile[] = [];
 
     context.modal('Your avatar', `<div class="avatar-picker" data-ui>
         <div class="avatar-picker-top">
@@ -89,7 +91,11 @@ export function openAvatarPicker(context: AppContext, supplied: unknown, save: (
         </div>
         <div class="avatar-picker-utilities">
             <button class="quiet-button avatar-credits" type="button" data-avatar-credits>Credits</button>
-            <button class="quiet-button" type="button" data-avatar-shuffle>${icon('refresh', 17)} Shuffle</button>
+            <div class="avatar-shuffle-controls">
+                <button class="icon-btn" type="button" data-avatar-history="undo" aria-label="Undo shuffle" title="Undo shuffle" disabled>${icon('undo', 17)}</button>
+                <button class="icon-btn" type="button" data-avatar-history="redo" aria-label="Redo shuffle" title="Redo shuffle" disabled>${icon('redo', 17)}</button>
+                <button class="quiet-button" type="button" data-avatar-shuffle>${icon('refresh', 17)} Shuffle</button>
+            </div>
         </div>
         <details class="avatar-customize">
             <summary>Customize</summary>
@@ -106,6 +112,8 @@ export function openAvatarPicker(context: AppContext, supplied: unknown, save: (
         const styleSelect = root.querySelector<HTMLSelectElement>('[data-avatar-field=style]');
         const customize = root.querySelector<HTMLDetailsElement>('.avatar-customize');
         const customization = root.querySelector<HTMLElement>('[data-avatar-options]');
+        const undo = root.querySelector<HTMLButtonElement>('[data-avatar-history="undo"]');
+        const redo = root.querySelector<HTMLButtonElement>('[data-avatar-history="redo"]');
         let previewTimer: ReturnType<typeof setTimeout> | null = null;
 
         root.querySelector('[data-avatar-credits]').addEventListener('click', () => {
@@ -235,11 +243,21 @@ export function openAvatarPicker(context: AppContext, supplied: unknown, save: (
             if (!button) return;
             const reset = button.dataset.avatarReset;
             if (button.hasAttribute('data-avatar-shuffle')) {
+                past.push(structuredClone(draft));
+                if (past.length > shuffleHistoryLimit) past.shift();
+                future.length = 0;
                 draft.seed = randomSeed();
                 if (draft.preset !== undefined) {
                     delete draft.preset;
                     root.querySelector<HTMLSelectElement>('[data-avatar-field=preset]').value = '';
                 }
+            } else if (button === undo || button === redo) {
+                const source = button === undo ? past : future;
+                const next = source.pop();
+                if (!next) return;
+                (button === undo ? future : past).push(structuredClone(draft));
+                draft = next;
+                void renderSettings();
             } else if (reset === 'all') {
                 draft = {style: draft.style, seed: draft.seed};
                 void renderSettings();
@@ -249,6 +267,8 @@ export function openAvatarPicker(context: AppContext, supplied: unknown, save: (
                 slider.dispatchEvent(new Event('input', {bubbles: true}));
                 return;
             } else return;
+            undo.disabled = past.length === 0;
+            redo.disabled = future.length === 0;
             requestPreview();
         });
 
