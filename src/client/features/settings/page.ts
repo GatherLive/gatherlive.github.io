@@ -3,6 +3,7 @@ import {$,esc} from '../../core/dom.js';
 import {icon} from '../../core/icons.js';
 import {accountSettings} from './account.js';
 import {aboutSettings} from './about.js';
+import {guideSettings} from './guide.js';
 import {usageSettings,imageList,DELETE_RESOURCES} from './usage.js';
 import {releaseArchive} from './changelog.js';
 import {usageApplication} from '../../core/usage.js';
@@ -17,12 +18,17 @@ export function createFeaturesSettings(context: AppContext){
   if(S.usageOwner!==owner){S.usageOwner=owner;S.accountUsage=null;S.usageImages=[];imagePage=0;}
   S.disposeSettings=()=>{clearTimeout(usageTimer);generation++;S.cancelUsageDelete?.();S.cancelUsageDelete=null;};
   const returnTo=S.settingsReturn||'#',back=area?'#settings':returnTo;
-  const headings={account:'Account settings',usage:'Usage',about:'About Gather'},heading=headings[area]||'Settings';
+  const headings={account:'Account settings',usage:'Usage',about:'About Gather',guide:'How to use Gather'},heading=headings[area]||'Settings';
   let content;
   if(area==='account')content=accountSettings(context);
   else if(area==='about')content=aboutSettings();
+  else if(area==='guide')content=guideSettings();
   else if(area==='usage')content=`<div id="usage-content">${usageSettings(S.accountUsage)}</div>`;
-  else content=`<section class="settings-group settings-menu">${[['account','Account settings','Password, room chat and account access','users'],['usage','Usage','Limits and saved data','usage'],['about','About Gather','Version, contact and legal','info']].map(([key,title,detail,symbol])=>`<a class="settings-link" href="#settings/${key}">${icon(symbol,21)}<span><strong>${title}</strong><small>${detail}</small></span>${icon('chevron',18)}</a>`).join('')}<a class="settings-link" href="https://buymeacoffee.com/gatherlive" target="_blank" rel="noopener noreferrer">${icon('coffee',21)}<span><strong>Buy me a coffee</strong><small>Support Gather</small></span>${icon('arrow',18)}</a></section>`;
+  else content=`<section class="settings-group settings-menu">
+    ${[['account','Account settings','Password, room chat and account access','users'],['usage','Usage','Limits and saved data','usage'],['about','About Gather','Version, contact and legal','info'],['guide','How to use Gather','Prompts, quiz formats and room controls','quiz']].map(([key,title,detail,symbol])=>`<a class="settings-link" href="#settings/${key}">${icon(symbol,21)}<span><strong>${title}</strong><small>${detail}</small></span>${icon('chevron',18)}</a>`).join('')}
+    <button type="button" class="settings-link" data-action="share-gather">${icon('copy',21)}<span><strong>Share Gather</strong><small>Share with friends</small></span>${icon('chevron',18)}</button>
+    <a class="settings-link" href="https://buymeacoffee.com/gatherlive" target="_blank" rel="noopener noreferrer">${icon('coffee',21)}<span><strong>Buy me a coffee</strong><small>Support Gather</small></span>${icon('arrow',18)}</a>
+  </section>`;
   const refresh=area==='usage'?`<button class="quiet-button usage-refresh" data-action="refresh-usage" data-refresh-pending="Updating" aria-label="Refresh usage" aria-live="polite">${icon('refresh',17)}<span>Refresh</span></button>`:'';
   context.shell(`<main class="page settings-page" data-ui="settings"><header class="settings-heading" data-area="${area||'general'}">${pageHeading(heading,{href:back,backLabel:area?'Settings':settingsBackLabel(returnTo),action:refresh})}</header>${content}</main>`);
   $('.settings-heading h1')?.focus({preventScroll:true});
@@ -80,7 +86,19 @@ export function createFeaturesSettings(context: AppContext){
   if(S.draft?.owner_id===context.activeUser()?.id&&S.draft.questions.some(q=>q.image===image.url||q.options?.some(option=>option.image===image.url))){context.toast('This image is used by your quiz draft. Remove it there first.',true);return;}
   context.modal('Remove this image?','<p>The uploaded image will be permanently removed. Images used by quizzes, results or open rooms cannot be removed individually.</p>',`<button class="btn danger" data-action="confirm-remove-usage-image" data-name="${esc(image.name)}">Remove image</button>`);
  }
+ async function shareGather(){
+  const url='https://gatherlive.github.io/';
+  const text='Try Gather for free, open-source quizzes. Play with friends using a room code or practice on your own.';
+  const invite=text+'\n'+url;
+  if(navigator.share){
+   try{await navigator.share({title:'Gather',text,url});return;}
+   catch(error){if(error.name==='AbortError')return;}
+  }
+  try{await navigator.clipboard.writeText(invite);context.toast('Gather invitation copied.');}
+  catch{context.modal('Share Gather',`<textarea class="input" id="share-gather-invite" rows="4" aria-label="Gather invitation" readonly>${esc(invite)}</textarea>`,'',()=>$('#share-gather-invite')?.select());}
+ }
  return {settingsView,refreshUsage,actions:{
+  'share-gather':shareGather,
   'refresh-usage':()=>refreshUsage(),
   'older-releases-more':()=>{olderCount+=5;$('#release-archive').innerHTML=releaseArchive(olderCount);},
   'usage-delete':button=>confirmDelete(button.dataset.resource),

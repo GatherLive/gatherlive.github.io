@@ -58,8 +58,11 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
         if(this.engine.phase==='finished'&&(saved.conversation?.messages?.length||saved.conversation?.announcement))this.checkpoint();
       }
       if(this.engine){
-        const connected=new Set(ctx.getWebSockets().map(ws=>ws.deserializeAttachment()).filter(id=>id?.role==='player'&&!id.superseded&&!id.throttled&&id.roomId===this.meta.reportId).map(id=>id.playerId));
+        const lastSavedAt=this.engine.updatedAt;
+        const identities=this.connectedIdentities();
+        const connected=new Set(identities.map(id=>this.engine.playerIdFor(id)).filter(Boolean));
         for(const player of this.engine.players.values())if(player.connected&&!connected.has(player.id)){this.engine.disconnect(player.id);this.savePlayer(player.id);}
+        if(!identities.length&&this.engine.pauseEmptyRoom(lastSavedAt))this.checkpoint();
       }
       if(this.engine?.mediaGate?.hostRequired)this.engine.mediaGate.hostReady=ctx.getWebSockets().some(ws=>{const id=ws.deserializeAttachment();return id?.role==='host'&&!id.superseded&&id.roomId===this.meta?.reportId&&id.mediaReadyToken===this.engine.mediaGate.token;});
       this.hostSockets=new Set(ctx.getWebSockets().filter(ws=>{const identity=ws.deserializeAttachment();return identity?.role==='host'&&!identity.superseded&&identity.roomId===this.meta?.reportId;}));
@@ -69,6 +72,10 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
         if(alarm===null||alarm>this.expiresAt())await this.schedule();
       }
     });
+  }
+  connectedIdentities(exclude?: WebSocket) {
+    return this.ctx.getWebSockets().filter(ws=>ws!==exclude&&ws.readyState===1).map(ws=>ws.deserializeAttachment())
+      .filter(id=>id?.role&&!id.superseded&&!id.throttled&&id.roomId===this.meta.reportId);
   }
   initializeStorage() {
     this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS checkpoint (id INTEGER PRIMARY KEY CHECK(id=1), state TEXT NOT NULL, meta TEXT NOT NULL)');
@@ -156,7 +163,7 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
   available() {return !!this.engine&&!this.purging&&this.expiresAt()>Date.now();}
   getSummary(ownerId) {
     if(!this.engine||this.purging||this.engine.phase==='finished'||this.expiresAt()<=Date.now()||this.meta.ownerId!==ownerId)return null;
-    return {code:this.engine.code,roomId:this.meta.reportId,quizId:this.meta.quizId,title:this.meta.title,phase:this.engine.phase,participants:this.engine.participantCount,expires:this.meta.expiresAt};
+    return {code:this.engine.code,roomId:this.meta.reportId,quizId:this.meta.quizId,title:this.meta.title,phase:this.engine.phase,participants:this.engine.participantCount,expires:this.meta.expiresAt,study:this.engine.isSelfStudy,mode:this.engine.mode,paused:this.engine.autoplay.status==='paused'};
   }
   async closeRoom(ownerId,roomId,unfinishedOnly=false) {
     try{
@@ -207,8 +214,8 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
     }catch(error){return json({error:error.message},error.status || 500);}
   }
   send(ws,body) {try{ws.send(typeof body==='string'?body:JSON.stringify(body));}catch{}}
-  sendState(ws,identity) {this.send(ws,{type:'state',state:this.engine.snapshot(identity.role==='host',identity.playerId,{media:identity.mediaVersion||false,conversation:identity.conversationVersion===1})});}
-  sendConversation(ws,identity) {if(identity.conversationVersion===1)this.send(ws,{type:'conversation',state:this.engine.conversation.snapshot(identity,this.engine.phase)});}
+  sendState(ws,identity) {this.send(ws,{type:'state',state:this.engine.snapshot(identity.role==='host',this.engine.playerIdFor(identity),{media:identity.mediaVersion||false,conversation:identity.conversationVersion===1})});}
+  sendConversation(ws,identity) {if(identity.conversationVersion===1)this.send(ws,{type:'conversation',state:this.engine.conversation.snapshot(identity,this.engine.chatPhase)});}
   broadcastConversation(event) {
     if(!event||!this.engine||this.engine.phase==='finished')return;
     const packet=JSON.stringify(event);
@@ -221,8 +228,8 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
     }
   }
   updateTyping(ws,identity,message) {
-    const {conversation,phase,players}=this.engine,now=Date.now(),wasViewing=identity.chatViewing;
-    const event=conversation.updateTyping(identity,message,phase,players,now);
+    const {conversation,chatPhase,players}=this.engine,now=Date.now(),wasViewing=identity.chatViewing;
+    const event=conversation.updateTyping(identity,message,chatPhase,players,now);
     ws.serializeAttachment(identity);
     this.broadcastConversation(event);
     if(wasViewing||!identity.chatViewing)return;
@@ -260,12 +267,15 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
   async webSocketMessage(ws,raw) {
     const serverReceivedAt=Date.now();let message;
     const observedEngine=this.engine;
-    let persistedPhase=observedEngine?.phase;
+    let persistedPhase=observedEngine?.phase,persistedAutoplay=observedEngine?.autoplay.status;
+    let persistedRevealed=observedEngine?.competitionReview?.revealed;
     // Joins and answers also tick internally; their transitions need full checkpoints.
     const persistTransition=async()=>{
-      if(!this.engine || this.purging || this.engine!==observedEngine || this.engine.phase===persistedPhase)return;
-      this.checkpoint();this.broadcast();await this.schedule();
-      persistedPhase=this.engine.phase;
+      if(!this.engine||this.purging||this.engine!==observedEngine)return;
+      if(this.engine.phase===persistedPhase&&this.engine.autoplay.status===persistedAutoplay&&this.engine.competitionReview?.revealed===persistedRevealed)return;
+      this.checkpoint();this.broadcast();
+      persistedPhase=this.engine.phase;persistedAutoplay=this.engine.autoplay.status;persistedRevealed=this.engine.competitionReview?.revealed;
+      await this.schedule();
     };
     try {
       this.ensure();
@@ -285,17 +295,28 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
       if(!identity.role){
         const engine=this.engine,roomId=this.meta.reportId,authId=crypto.randomUUID();
         ws.serializeAttachment({...identity,authenticating:authId});
-        let auth,accountChat=false;
+        let auth,accountChat: boolean | undefined;
         const guard=identity.network&&this.env.ROOM_GATE?this.env.ROOM_GATE.getByName(identity.network):null;
-        try{auth=await authorize(engine,this.meta,this.env,message,guard?{check:()=>guard.verification(engine.code),failed:()=>guard.verification(engine.code,true)}:undefined);if(auth.identity.role==='host')accountChat=await this.accountChatAccess(auth.identity.userId);}
+        const authActive=()=>!this.purging&&this.engine===engine&&this.meta?.reportId===roomId&&this.expiresAt()>Date.now()&&
+          ws.deserializeAttachment()?.authenticating===authId&&ws.readyState===1&&Date.now()-(identity.acceptedAt||0)<10000;
+        try{
+          auth=await authorize(engine,this.meta,this.env,message,{
+            active:authActive,...(guard?{check:()=>guard.verification(engine.code),failed:()=>guard.verification(engine.code,true)}:{})
+          });
+          if(auth.identity.role==='host'&&!engine.isSelfStudy)accountChat=await this.accountChatAccess(auth.identity.userId);
+        }
         finally{const current=ws.deserializeAttachment();if(current?.authenticating===authId){delete current.authenticating;ws.serializeAttachment(current);}}
         this.ensure();
         await persistTransition();
         if(this.engine!==engine || this.meta.reportId!==roomId || ws.deserializeAttachment()?.superseded || Date.now()-(identity.acceptedAt || 0)>=10000 || ws.readyState!==1){
-          if(auth.identity.playerId && this.engine===engine){engine.disconnect(auth.identity.playerId);this.savePlayer(auth.identity.playerId);}
+          const playerId=auth.identity.playerId;
+          if(playerId&&this.engine===engine&&!this.connectedIdentities(ws).some(id=>id.playerId===playerId)){
+            engine.cancelPendingJoin(playerId,auth.freshPlayer===true);
+            if(auth.freshPlayer)this.checkpoint();else this.savePlayer(playerId);
+          }
           ws.serializeAttachment({superseded:true});try{ws.close(4008,'Join timed out.');}catch{}return;
         }
-        if(auth.identity.role==='host'&&engine.phase!=='finished'&&engine.chatUnlocked!==accountChat){if(accountChat)engine.authorizeChat({enable:false});else engine.revokeChat();this.checkpoint();this.saveConversation();}
+        if(typeof accountChat==='boolean'&&engine.phase!=='finished'&&engine.chatUnlocked!==accountChat){if(accountChat)engine.authorizeChat({enable:false});else engine.revokeChat();this.checkpoint();this.saveConversation();}
         identity={...identity,...auth.identity};ws.serializeAttachment(identity);
         if(identity.role==='host')this.hostSockets.add(ws);
         // A resumed player replaces their old connection to prevent double control.
@@ -309,13 +330,15 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
               try{other.close(4001,'Connected on another tab.');}catch{}
             }
           }
-          this.savePlayer(identity.playerId);
         }
+        engine.connectHostPlayer(identity);
+        const playerId=engine.playerIdFor(identity);
+        if(playerId)this.savePlayer(playerId);
         this.send(ws,auth.welcome);this.sendState(ws,identity);this.sendConversation(ws,identity);this.broadcastJoins();await this.schedule();return;
       }
       if(message.type==='join_code_request'){
         if(identity.role!=='host'||identity.userId!==this.meta.ownerId)throw new HttpError(403,'Only the host can view the join verification code.');
-        if(this.engine.settings.joinVerification&&this.engine.phase!=='finished')this.send(ws,{type:'join_code',roomCode:this.engine.code,...await this.engine.joinChallenge()});
+        if(this.engine.settings.joinVerification&&this.engine.chatPhase!=='finished')this.send(ws,{type:'join_code',roomCode:this.engine.code,...await this.engine.joinChallenge()});
         return;
       }
       if(message.type==='ping'){this.send(ws,{type:'pong',...(typeof message.id==='string'&&message.id.length<=80?{id:message.id,serverReceivedAt}:{}),serverNow:Date.now()});return;}
@@ -333,7 +356,7 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
       if(message.type==='chat_unlock'){
         if(identity.role!=='host'||identity.userId!==this.meta.ownerId)throw new HttpError(403,'Only the host can unlock chat.');
         if(typeof message.requestId!=='string'||!/^[a-zA-Z0-9-]{1,80}$/.test(message.requestId))throw new HttpError(400,'A message reference is required.');
-        if(['countdown','question','finished'].includes(this.engine.phase))throw new HttpError(409,'Unlock chat before starting or between questions.');
+        if(['countdown','question','finished'].includes(this.engine.chatPhase))throw new HttpError(409,'Unlock chat in a live quiz before starting or between questions.');
         const engine=this.engine,roomId=this.meta.reportId;
         if(!engine.chatUnlocked){
           const remote=await poolUnlockChat(this.env,this.meta.ownerId,message.code);
@@ -353,15 +376,23 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
         if(event){this.saveConversation();this.broadcastConversation(event);}
         this.send(ws,ack);
       }else if(message.type==='media_ready'){
-        if(result.changed&&identity.role==='host'){identity.mediaReadyToken=message.token;ws.serializeAttachment(identity);}
-        await persistTransition();if(result.changed&&identity.playerId)this.savePlayer(identity.playerId);this.send(ws,{type:result.type,token:result.token});if(result.changed)this.broadcastMediaProgress();
+        const playerId=this.engine.playerIdFor(identity);
+        if(result.changed&&identity.role==='host'&&!playerId){identity.mediaReadyToken=message.token;ws.serializeAttachment(identity);}
+        await persistTransition();if(result.changed&&playerId)this.savePlayer(playerId);this.send(ws,{type:result.type,token:result.token});if(result.changed)this.broadcastMediaProgress();
       }else if(message.type==='answer'){
         await persistTransition();
-        this.savePlayer(identity.playerId);
+        this.savePlayer(this.engine.playerIdFor(identity));
         this.send(ws,{...result,type:'answer_ack',questionId:message.questionId,accepted:true});
         this.broadcastProgress();
+      }else if(message.type==='avatar_update'){
+        await persistTransition();
+        if(result.changed){
+          if(identity.role==='host')this.checkpoint();
+          else this.savePlayer(identity.playerId);
+          this.broadcastJoins();
+        }
       } else {
-        this.checkpoint();persistedPhase=this.engine.phase;
+        this.checkpoint();persistedPhase=this.engine.phase;persistedAutoplay=this.engine.autoplay.status;persistedRevealed=this.engine.competitionReview?.revealed;
         if(result?.type)this.send(ws,result);
         if(message.type==='kick'){
           for(const client of this.ctx.getWebSockets()){
@@ -378,7 +409,7 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
       if(message.type!=='answer'&&result?.channel!=='conversation')await this.schedule();
     }catch(error){
       await persistTransition();
-      if(message?.type!=='chat_typing')this.send(ws,{...safeError(error),...(CONVERSATION_COMMANDS.has(message?.type)||message?.type==='chat_subscribe'?{scope:'conversation',requestId:message.requestId}:{})});
+      if(message?.type!=='chat_typing')this.send(ws,{...safeError(error,message),...(CONVERSATION_COMMANDS.has(message?.type)||message?.type==='chat_subscribe'?{scope:'conversation',requestId:message.requestId}:{})});
       const identity=ws.deserializeAttachment();
       if(identity&&error.status===429){if(repeatedFlood(identity)){identity.throttled=true;try{ws.close(1008,'Too many messages. Reconnect after a short pause.');}catch{}}ws.serializeAttachment(identity);}
       if(identity&&!identity.role&&!identity.superseded){identity.authFailures=(identity.authFailures||0)+1;ws.serializeAttachment(identity);if(identity.authFailures>=5){ws.serializeAttachment({...identity,superseded:true});try{ws.close(4008,'Too many join attempts. Wait a minute and retry.');}catch{}}}
@@ -387,9 +418,17 @@ export class GiveawayRoom extends DurableObject<WorkerEnv> {
   async webSocketClose(ws) {
     this.hostSockets.delete(ws);
     const identity=ws.deserializeAttachment();
-    if(this.engine && !this.purging && !identity?.superseded && identity?.roomId===this.meta.reportId){
+    if(this.engine&&!this.purging&&identity?.role&&!identity.superseded&&identity.roomId===this.meta.reportId){
       this.broadcastConversation(this.engine.conversation.stopTyping(identity));
-      if(identity.playerId){this.engine.disconnect(identity.playerId);if(this.engine.tick()){this.checkpoint();this.broadcast();await this.schedule();}else this.savePlayer(identity.playerId);this.broadcastJoins();}
+      const playerId=this.engine.playerIdFor(identity);
+      const remaining=this.connectedIdentities(ws);
+      if(identity.role!=='host'||!remaining.some(id=>id.role==='host')){
+        if(playerId)this.engine.disconnect(playerId);
+        const paused=remaining.length===0&&this.engine.pauseEmptyRoom();
+        if(paused||this.engine.tick()){this.checkpoint();this.broadcast();await this.schedule();}
+        else if(playerId)this.savePlayer(playerId);
+        if(playerId)this.broadcastJoins();
+      }
     }
     try{ws.close(1000,'Connection closed.');}catch{}
   }

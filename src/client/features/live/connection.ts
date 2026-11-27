@@ -1,7 +1,9 @@
 import type {AppContext} from '../../app/context.js';
+import type {GameSettings} from '../../../shared/types.js';
 import { uid, $, $$, esc } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { RoomClock } from './clock.js';
+import {readAvatarProfile} from '../avatars/picker.js';
 import { RoomChat } from '../chat/room-chat.js';
 import { RoomImages } from '../media/images.js';
 export function createFeaturesLiveConnection(context: AppContext) {
@@ -22,17 +24,18 @@ export function createFeaturesLiveConnection(context: AppContext) {
     const refreshAnswerUI = (...args) => context.refreshAnswerUI(...args);
     const forgetPlayer = (...args) => context.forgetPlayer(...args);
     const roomLink = (...args) => context.roomLink(...args);
-    async function hostQuiz(quizId, settings) {
+    async function hostQuiz(quizId, settings?: Partial<GameSettings>) {
         toast('Opening room…');
         const quiz = S.quizzes.find(q => q.id === quizId) || S.draft;
         const result = await backend('/api/rooms', { quizId, settings: { ...defaultSettings(), ...(quiz?.settings || {}), ...(settings || {}) } });
         S.hostedQuizzes||={};S.hostedQuizzes[quizId]={lastHostedAt:result.hostedAt||Date.now()};
-        S.room = { code: result.code, role: 'host' };
+        S.room = {code: result.code, role: 'host'};
         try { sessionStorage.setItem(`gather.host.${result.code}`, '1'); } catch { }
         location.hash = `#room/${result.code}`;
         connectRoom();
     }
     function disconnectRoom() {
+        context.disposeAutoplay();
         context.disposeRoomSettings();
         S.syncTimers?.forEach(clearTimeout);
         S.syncTimers = [];
@@ -165,7 +168,7 @@ export function createFeaturesLiveConnection(context: AppContext) {
             if (generation !== S.wsGeneration)
                 return;
             S.lastSocketMessage = Date.now();
-            ws.send(JSON.stringify(room.role === 'host' ? { type: 'auth', role: 'host', token, mediaVersion: globalThis.crypto?.subtle ? 2 : 1, conversationVersion: 1, chatSubscribed: !S.chat.hidden } : { type: 'auth', role: 'player', name: room.name, contact_url_confirm:room.contact_url_confirm||'',verificationCode:room.verificationCode,playerId: room.playerId, resumeToken: room.resumeToken, mediaVersion: globalThis.crypto?.subtle ? 2 : 1, conversationVersion: 1, chatSubscribed: !S.chat.hidden }));
+            ws.send(JSON.stringify(room.role === 'host' ? { type: 'auth', role: 'host', token, mediaVersion: globalThis.crypto?.subtle ? 2 : 1, conversationVersion: 1, chatSubscribed: !S.chat.hidden } : { type: 'auth', role: 'player', name: room.name, contact_url_confirm:room.contact_url_confirm||'',verificationCode:room.verificationCode,team:room.team,avatar:room.playerId ? undefined : readAvatarProfile(),playerId: room.playerId, resumeToken: room.resumeToken, mediaVersion: globalThis.crypto?.subtle ? 2 : 1, conversationVersion: 1, chatSubscribed: !S.chat.hidden }));
             let heartbeatTicks = 0;
             S.heartbeat = setInterval(() => { if (generation !== S.wsGeneration)
                 return; if ((navigator.onLine as boolean) === false || Date.now() - S.lastSocketMessage >= 7500) {
@@ -198,9 +201,17 @@ export function createFeaturesLiveConnection(context: AppContext) {
             catch {
                 return;
             }
-            if (context.receiveRoomSettings(data)) return;
+            if (context.receiveRoomSettings(data) || context.receiveAutoplay(data)) return;
+            if (room.role === 'player' && data.type === 'error' && ['TEAM_REQUIRED', 'TEAM_FULL'].includes(data.code)) {
+                S.joinVerificationPrompt = undefined;
+                S.joinTeamPrompt = {code: room.code, name: room.name, message: data.message, verificationCode: room.verificationCode};
+                disconnectRoom();S.room = null;S.roomState = null;S.fatalRoomError = null;
+                location.replace('#join/' + room.code);
+                return;
+            }
             if (data.type === 'welcome') {
-                delete room.verificationCode;S.joinVerificationPrompt = undefined;
+                delete room.verificationCode;delete room.team;
+                S.joinVerificationPrompt = undefined;S.joinTeamPrompt = undefined;
                 room.playerId = data.playerId;
                 room.resumeToken = data.resumeToken;
                 if (room.role === 'player') {
@@ -230,11 +241,16 @@ export function createFeaturesLiveConnection(context: AppContext) {
                 const previousId = S.roomState?.question?.id, newId = data.state?.question?.id, previousPhase = S.roomState?.phase;
                 if ($('.image-modal') && (previousId !== newId || previousPhase !== data.state.phase))
                     closeModal();
+                if (previousPhase === 'lobby' && data.state.phase !== 'lobby' && document.querySelector('.avatar-picker, .avatar-credit-list')) closeModal();
                 S.connected = true;
                 S.connectionStatus = 'connected';
                 S.retries = 0;
                 S.roomState = data.state;
-                if(room.role==='host'&&data.state.chat)context.rememberChatAccess?.({unlocked:data.state.chat.unlocked===true,application:S.chatApplication});
+                if(room.role==='host'){
+                    room.study=data.state.study===true;
+                    room.playerId=data.state.me?.id;
+                }
+                if(room.role==='host'&&!room.study&&data.state.chat)context.rememberChatAccess?.({unlocked:data.state.chat.unlocked===true,application:S.chatApplication});
                 S.chat?.setState(data.state);
                 if (initialState) S.clock.reset();
                 S.clock.observe(data.state.serverNow);
@@ -274,7 +290,7 @@ export function createFeaturesLiveConnection(context: AppContext) {
                 renderRoom();
                 if (previousId !== newId || previousPhase !== data.state.phase) {
                     window.scrollTo(0, 0);
-                    if (S.room.role === 'player' && data.state.phase === 'question')
+                    if ((S.room.role === 'player' || data.state.hostPlaying) && data.state.phase === 'question')
                         $('#live-question-title')?.focus({ preventScroll: true });
                 }
             }
@@ -385,7 +401,7 @@ export function createFeaturesLiveConnection(context: AppContext) {
     }
     function updateConnection() {
         $$('.connection').forEach(el => { el.classList.toggle('offline', !S.connected); el.dataset.state = S.connectionStatus || 'connecting'; el.innerHTML = connectionLabel(); });
-        $$('[data-needs-connection]').forEach(el => el.disabled = !S.connected || (el.dataset.action === 'room-start' && !(S.roomState?.participantCount ?? S.roomState?.players?.length)));
+        $$('[data-needs-connection]').forEach(el => el.disabled = !S.connected || (el.dataset.action === 'room-start' && (S.roomState?.competition?.ready === false || !(S.roomState?.participantCount ?? S.roomState?.players?.length))));
         if (!S.connected)
             $$('.live-question button,.live-question input,.live-question textarea').forEach(el => el.disabled = true);
         S.chat?.refresh();
@@ -400,15 +416,19 @@ export function createFeaturesLiveConnection(context: AppContext) {
         S.ws.send(JSON.stringify(command));
         return true;
     }
-    async function copyLink() {
-        const link = roomLink(S.room.code);
+    async function copyRoomText(value: string, label: string, confirmation: string) {
         try {
-            await navigator.clipboard.writeText(link);
-            toast('Link copied.');
+            await navigator.clipboard.writeText(value);
+            toast(confirmation);
         }
         catch {
-            modal('Share link', `<input class="input" value="${esc(link)}" readonly aria-label="Invitation link">`, '', () => { $('.modal input').select(); });
+            modal(label, `<input class="input" value="${esc(value)}" readonly aria-label="${esc(label)}">`, '', () => { $('.modal input').select(); });
         }
     }
-    return { hostQuiz, disconnectRoom, connectRoom, openSocket, updateConnection, connectionLabel, send, copyLink };
+    function copyLink() { return copyRoomText(roomLink(S.room.code), 'Invitation link', 'Link copied.'); }
+    function copyRoomCode() {
+        const code = S.room?.code;
+        if (code && /^\d{6}$/.test(code)) return copyRoomText(code, 'Room code', 'Room code copied.');
+    }
+    return { hostQuiz, disconnectRoom, connectRoom, openSocket, updateConnection, connectionLabel, send, copyLink, copyRoomCode };
 }

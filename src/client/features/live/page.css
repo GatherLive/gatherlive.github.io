@@ -1,0 +1,157 @@
+.live-room-layout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100svh;
+}
+.live-room-layout > .room-header,
+.live-room-layout > .room-content {
+  width: 100%;
+  margin-block: 0;
+}
+.room-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 20px;
+}
+.room-content > main { min-width: 0; }
+.room-content > .countdown-state { flex: 1; min-height: 0; }
+.room-content > .live-question-screen:not(.live-choice-screen) { width: 100%; }
+.room-identity {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 8px;
+  padding: 4px 9px;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 100px;
+  background: var(--surface);
+}
+.room-identity .room-code-small {
+  white-space: nowrap;
+}
+.room-identity .room-code-small b {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .06em;
+}
+.room-copy-code {
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.room-copy-code:hover b { color: var(--accent); }
+.room-nav .room-identity .connection {
+  padding: 0;
+  padding-inline-start: 8px;
+  border: 0;
+  border-inline-start: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+}
+@media (max-width: 400px) {
+  .room-identity { gap: 5px; padding-inline: 7px; }
+  .room-nav .room-identity .connection { padding-inline-start: 5px; }
+  .room-nav .room-life-status { font-size: 10px; }
+}
+@media (max-width: 360px) {
+  .room-nav:has(.room-life-status, .room-avatar-button) .brand { font-size: 0; gap: 0; }
+}
+.room-nav .room-avatar-button {
+  flex: none;
+  padding: 0;
+  border-radius: 50%;
+}
+.room-avatar-button .gather-avatar { --avatar-size: 28px; }
+.room-avatar-button:hover .gather-avatar,
+.room-avatar-button:focus-visible .gather-avatar { outline: 1px solid var(--accent); }
+.game-lobby-note { margin-block: 18px 0; }
+.player-lobby .game-stage { text-align: start; }
+.game-answer-review { margin: 10px 0; }
+.game-answer-review > summary {
+  color: var(--text);
+  cursor: pointer;
+  padding: 10px 0;
+}
+.solo-lobby {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  padding: 32px 0 64px;
+}
+.solo-start {
+  width: min(100%, 440px);
+  padding: clamp(24px, 6vw, 40px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.solo-start h1 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: clamp(23px, 3vw, 30px);
+  line-height: 1.25;
+  letter-spacing: -.025em;
+}
+.solo-start p {
+  margin: 8px 0 24px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.solo-start .btn { min-height: 44px; }
+.solo-next {
+  display: flex;
+  justify-content: center;
+  margin: 18px 0 0;
+}
+.room-content .host-controls { justify-content: flex-end; }
+.live-room-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 12px;
+  margin-top: auto;
+  padding-top: 16px;
+}
+.live-room-footer .quiet-button { min-height: 44px; }
+.room-paused {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  margin-top: 10px;
+  padding: 10px 14px;
+}
+.room-paused strong { font-size: 13px; font-weight: 550; }
+.room-paused small { display: block; color: var(--muted); font-size: 12px; }
+.room-paused .btn { min-height: 44px; }
+.question-progress,
+.round-tag-title { min-width: 0; }
+.round-tag { align-items: baseline; }
+.round-tag-title,
+.round-overline { overflow-wrap: anywhere; }
+.reveal-answer { overflow-wrap: anywhere; }
+.round-tag-count,
+.question-metrics { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.question-metrics .timer { flex: none; }
+
+@media (max-width: 600px) {
+  .solo-start .btn { width: 100%; }
+  .question-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+  }
+  .question-top .question-progress { display: contents; }
+  .question-top .round-tag { grid-column: 1 / -1; justify-content: space-between; }
+  .question-top .question-index { color: var(--muted); font-size: 12px; }
+  .question-top .question-index b { color: var(--text); font-weight: 500; }
+  .question-top .question-metrics { justify-self: end; }
+}

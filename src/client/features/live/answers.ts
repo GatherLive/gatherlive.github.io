@@ -2,6 +2,7 @@ import type {AppContext} from '../../app/context.js';
 import { icon } from '../../core/icons.js';
 import { $, $$, safeImage, esc } from '../../core/dom.js';
 import {pinRegion, pinRegionDot, pinRegionSvg} from '../../core/pin-regions.js';
+import {competitionMode} from './competition.js';
 export function createFeaturesLiveAnswers(context: AppContext) {
     const S = context.state;
     const send = (...args) => context.send(...args);
@@ -11,13 +12,14 @@ export function createFeaturesLiveAnswers(context: AppContext) {
     function answerStatus(q, isHost = false) {
         if (isHost || q.type === 'slide')
             return '';
+        if (S.roomState?.me?.eliminated || S.roomState?.me?.spectating) return '<p class="answer-note">Watching as a spectator</p>';
         return `<div class="live-answer-status" role="status">${S.answerSent ? `<div class="answer-result neutral">${icon('check', 19)} Answer received</div>` : S.answerPending ? '<p class="answer-note"><span class="spinner"></span> Sending…</p>' : ['multi', 'order', 'pin'].includes(q.type) ? `<p class="answer-note">${q.type === 'multi' ? 'Select all correct answers' : q.type === 'order' ? 'Arrange in order' : 'Tap a location'}</p>` : ''}</div>`;
     }
     function refreshAnswerUI() {
         const st = S.roomState, q = st?.question, section = $('.live-question');
-        if (st?.phase !== 'question' || !q || !section || S.room?.role === 'host')
+        if (st?.phase !== 'question' || !q || !section || (S.room?.role === 'host' && !st.hostPlaying))
             return;
-        const blocked = !S.connected || S.answerSent || S.answerPending || section.getAttribute('aria-busy') === 'true';
+        const blocked = !S.connected || st.me?.eliminated || st.me?.spectating || S.answerSent || S.answerPending || st.autoplay?.clockPaused || section.getAttribute('aria-busy') === 'true';
         $$('[data-action="choose-answer"]', section).forEach(el => { const selected = Array.isArray(S.selection) ? S.selection.includes(el.dataset.id) : S.selection === el.dataset.id; el.classList.toggle('selected', selected); el.setAttribute('aria-pressed', String(selected)); el.disabled = blocked; const mark = $('.option-mark', el); if (mark)
             mark.textContent = selected ? '●' : ''; });
         $$('[data-action^="submit-"],.text-answer button,#player-text,#player-slider,[data-reorder-handle],[data-action="player-order"]', section).forEach(el => {
@@ -33,7 +35,7 @@ export function createFeaturesLiveAnswers(context: AppContext) {
         }
     }
     function sendAnswer(answer) {
-        if (!S.connected || S.answerSent || S.answerPending || S.roomState?.phase !== 'question')
+        if (!S.connected || S.roomState?.me?.eliminated || S.roomState?.me?.spectating || S.answerSent || S.answerPending || S.roomState?.phase !== 'question' || S.roomState.autoplay?.clockPaused)
             return;
         const questionId = S.roomState.question.id, attempt = S.answerAttempt = (S.answerAttempt || 0) + 1;
         S.selection = answer;
@@ -76,7 +78,7 @@ export function createFeaturesLiveAnswers(context: AppContext) {
             return `<p class="answer-note">${q.type === 'short_answer' ? 'Waiting for answers' : 'Waiting for responses'}</p>`;
         if (!answerable)
             return S.selection ? `<p class="subtle" style="margin:20px">Your answer: ${esc(S.selection)}</p>` : '';
-        const input = q.type === 'open_ended' ? `<textarea id="player-text" class="input" maxlength="1000" placeholder="Your answer…" required>${esc(S.selection || '')}</textarea>` : `<input id="player-text" class="input" maxlength="${q.type === 'word_cloud' ? 60 : 200}" placeholder="${q.type === 'word_cloud' ? 'A word or two…' : 'Your answer…'}" value="${esc(S.selection || '')}" autocomplete="off" required>`;
+        const input = q.type === 'open_ended' && competitionMode(st) === 'classic' ? `<textarea id="player-text" class="input" maxlength="1000" placeholder="Your answer…" required>${esc(S.selection || '')}</textarea>` : `<input id="player-text" class="input" maxlength="${q.type === 'word_cloud' ? 60 : 200}" placeholder="${q.type === 'word_cloud' ? 'A word or two…' : 'Your answer…'}" value="${esc(S.selection || '')}" autocomplete="off" required>`;
         return `<form id="text-answer-form" class="text-answer"><div class="field"><label class="sr-only" for="player-text">Your answer</label>${input}</div><button type="submit" class="btn primary full">Submit ${icon('arrow', 15)}</button></form>`;
     }
     return { answerStatus, refreshAnswerUI, sendAnswer, answerOption, orderView, sliderView, pinView, textAnswerView };

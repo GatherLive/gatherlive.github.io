@@ -162,3 +162,4 @@
 .chat-message.grouped:has(.chat-more) .chat-text { padding-inline-end: 20px; }
 
 .room-host-tools{display:flex;align-items:center;gap:8px;margin-right:auto}.room-host-tools .quiet-button{min-height:44px;white-space:nowrap}@media(max-width:600px){.room-host-tools{gap:2px}}
+.chat-message.own .chat-message-meta { color: currentColor; }

@@ -1,0 +1,21 @@
+.guide-prompts > p,
+.guide-section-body {
+  color: var(--soft);
+  font-size: 14px;
+  line-height: 1.65;
+}
+.guide-prompts > p { margin: 8px 0; }
+.guide-section:first-child { border-top: 0; }
+.guide-section > summary > span { display: inline-flex; align-items: center; gap: 10px; }
+.guide-section > summary > span svg { color: var(--muted); flex: none; }
+.guide-section[open] > summary > svg { transform: rotate(90deg); }
+.guide-section-body { padding: 0 0 16px 28px; }
+.guide-section-body p + p { margin-top: 9px; }
+.guide-path { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 3px; color: var(--text); }
+.guide-path svg { flex: none; color: var(--muted); }
+.guide-question-types { margin: 0; }
+.guide-question-types > div { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.guide-question-types > div:last-child { border-bottom: 0; }
+.guide-question-types dt { color: var(--text); font-weight: 550; }
+.guide-question-types dd { margin: 2px 0 0; }
+.guide-prompts .settings-link { min-height: 60px; }

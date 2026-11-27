@@ -7,13 +7,14 @@ import type {ReorderLists} from '../core/reorder.js';
 export interface AppState {
  config: PublicConfig; session: AccountSession | null; quizzes: Quiz[]; reports: DataRecord[];
  openRooms: DataRecord[]; roomsError: string; dashboardTab: string; filter: string; search: string;
- draft: Quiz | null; questionIndex: number; dirty: boolean; saving: boolean;
+ draft: Quiz | null; questionIndex: number; dirty: boolean; saving: boolean; reuseQuestionSettings?: boolean;
  room: DataRecord | null; roomState: DataRecord | null; ws: WebSocket | null; wsGeneration: number;
  reconnectTimer: ReturnType<typeof setTimeout> | null; retries: number; connected: boolean;
  selection: import('../../shared/types.js').AnswerValue | null; answerPending: boolean; answerSent: boolean; order: string[];
  pin: Point | null; authMode: string; authMessage: string; loading: boolean;
  reorder?: ReorderLists; chat?: RoomChat; clock?: RoomClock; images?: RoomImages;
  editorPanels?: Map<string,boolean>; syncTimers?: Array<ReturnType<typeof setTimeout>>;
+ studyQuestionsShownFor?: string | null;
  answerAttempt?: number; currentRoundId?: string; connectTimeout?: ReturnType<typeof setTimeout>;
  heartbeat?: ReturnType<typeof setInterval>; lastSocketMessage?: number; lastRoute?: string;
  connectionStatus?: string; roomUnavailable?: boolean; fatalRoomError?: string;
@@ -24,6 +25,7 @@ export interface AppState {
  quizFiltersOpen?: boolean; quizSearchOpen?: boolean; quizHostFilter?: string; quizSort?: string;
  reportPage?: number; reportTotal?: number; roomsToClose?: Array<{code: string; roomId: string}>;
  joinChallenge?: DataRecord | null; joinVerificationPrompt?: {code: string; name: string; message: string};
+ joinTeamPrompt?: {code: string; name: string; message: string; verificationCode?: string; team?: string};
  participants?: DataRecord[];
  disposeResults?: () => void; disposeSettings?: () => void; cancelUsageDelete?: () => void;
 }
@@ -43,6 +45,7 @@ type RuntimeMethod =
   | 'authRequest'
   | 'authView'
   | 'backend'
+  | 'bindEditorHistory'
   | 'bindEvents'
   | 'blankQuiz'
   | 'boot'
@@ -58,6 +61,7 @@ type RuntimeMethod =
   | 'connectionLabel'
   | 'copyAIPrompt'
   | 'copyLink'
+  | 'copyRoomCode'
   | 'csvFor'
   | 'dashboard'
   | 'db'
@@ -81,6 +85,8 @@ type RuntimeMethod =
   | 'updateRoomSettings'
   | 'receiveRoomSettings'
   | 'disposeRoomSettings'
+  | 'receiveAutoplay'
+  | 'disposeAutoplay'
   | 'leaderboard'
   | 'loadAccountChat'
   | 'loadOpenRooms'
@@ -136,9 +142,9 @@ type RuntimeMethod =
   | 'syncRoundOrder'
   | 'textAnswerView'
   | 'toast'
-  | 'turnstileToken'
   | 'updateChatApplication'
   | 'updateConnection'
+  | 'updateEditorHistory'
   | 'updateTimer'
   | 'uploadImage'
   | 'validateDraft'

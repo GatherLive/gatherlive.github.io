@@ -22,8 +22,14 @@ export function createFeaturesLibraryActions(context: AppContext) {
             'dashboard-tab': async (el) => { S.dashboardTab = el.dataset.tab; renderDashboard(); if (S.dashboardTab === 'rooms')
                 await loadOpenRooms(); },
             'refresh-rooms': () => loadOpenRooms(),
-            'rejoin-room': el => { if (!S.openRooms.some(room => room.code === el.dataset.code && isOpenRoom(room)))
-                return; S.room = { code: el.dataset.code, role: 'host' }; S.fatalRoomError = null; sessionStorage.setItem(`gather.host.${el.dataset.code}`, '1'); location.hash = `#room/${el.dataset.code}`; },
+            'rejoin-room': el => {
+                const room = S.openRooms.find(room => room.code === el.dataset.code && isOpenRoom(room));
+                if (!room) return;
+                S.room = {code: room.code, role: 'host', study: room.study === true};
+                S.fatalRoomError = null;
+                sessionStorage.setItem(`gather.host.${room.code}`, '1');
+                location.hash = `#room/${room.code}`;
+            },
             'close-room': el => confirmCloseRoom(el.dataset.code),
             'confirm-close-room': async (el) => { await backend(`/api/rooms/${el.dataset.code}`, { roomId: el.dataset.roomId }, 'DELETE'); forgetClosedRoom(el.dataset.code); closeModal(); await loadOpenRooms(); toast('Room closed.'); },
             'close-all-rooms': confirmCloseAllRooms,

@@ -254,6 +254,7 @@
  .analytics-participants{min-width:0;table-layout:fixed}.analytics-participants th,.analytics-participants td{padding-left:6px;padding-right:6px;font-size:13px}
  .analytics-participants :is(th,td):first-child{width:42%;padding-left:0}.analytics-participants :is(th,td):nth-child(2),.analytics-participants :is(th,td):nth-child(3){width:22%}
  .analytics-participants :is(th,td):nth-child(4){display:none}.analytics-participants :is(th,td):last-child{width:14%;padding-right:0}
+ .analytics-participants.mixed-participants :is(th,td):nth-child(5){display:none}
  .analytics-view-label{display:none}.analytics-participants .quiet-button{min-width:44px;min-height:44px;padding:4px;justify-content:flex-end}
  .participant-row-meta{display:none}.analytics-participants .participant-row-meta{display:block;margin-top:4px;color:var(--muted);font-size:12px;line-height:1.5}
  .analytics-participants .participant-name{font-size:14px;min-height:44px}

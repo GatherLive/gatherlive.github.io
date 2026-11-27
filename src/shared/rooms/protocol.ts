@@ -8,7 +8,7 @@ export function decodeMessage(raw) {
   if (!message || typeof message !== 'object' || Array.isArray(message) || typeof message.type !== 'string') throw new HttpError(400,'Invalid message.');
   return message;
 }
-export async function authorize(engine,meta,env,message,verification?: {check: () => Promise<boolean> | boolean; failed: () => Promise<unknown> | unknown}): Promise<{identity: RoomIdentity; welcome: DataRecord; chatUnlocked?: boolean}> {
+export async function authorize(engine,meta,env,message,verification?: {check?: () => Promise<boolean> | boolean; failed?: () => Promise<unknown> | unknown; active?: () => boolean}): Promise<{identity: RoomIdentity; welcome: DataRecord; chatUnlocked?: boolean; freshPlayer?: boolean}> {
   if (message.type !== 'auth') throw new HttpError(401,'Join the room first.');
   const conversation=message.conversationVersion===1?{conversationVersion:1,chatSubscribed:message.chatSubscribed!==false}:{};
   if (message.role === 'host') {
@@ -19,17 +19,22 @@ export async function authorize(engine,meta,env,message,verification?: {check: (
   }
   if(message.contact_url_confirm!=null&&message.contact_url_confirm!=='')throw new HttpError(400,'This room is not available. Please try again.');
   if (message.role !== 'player') throw new HttpError(400,'Choose host or player.');
-  if (message.playerId == null && message.resumeToken == null) {
-    if (engine.settings.joinVerification && message.verificationCode && verification && !await verification.check()) throw new HttpError(429, 'Too many verification attempts. Wait a minute and retry.');
+  if (engine.isSelfStudy) throw new HttpError(404,'Room is not available.');
+  const freshPlayer=message.playerId == null && message.resumeToken == null;
+  if (freshPlayer) {
+    if (engine.settings.joinVerification && message.verificationCode && verification?.check && !await verification.check()) throw new HttpError(429, 'Too many verification attempts. Wait a minute and retry.');
     try {await engine.verifyJoin(message.verificationCode);}
-    catch (error) {if (error.code === 'JOIN_VERIFICATION_FAILED') await verification?.failed();throw error;}
+    catch (error) {if (error.code === 'JOIN_VERIFICATION_FAILED') await verification?.failed?.();throw error;}
   }
-  const result=engine.addPlayer(message.name,message.playerId,message.resumeToken);
+  if(verification?.active&&!verification.active())throw new HttpError(408,'Join timed out. Please retry.');
+  const result=engine.addPlayer(message.name,message.playerId,message.resumeToken,message.team,message.avatar);
   engine.registerMedia(result.playerId,message.mediaVersion);
-  return {identity:{role:'player',playerId:result.playerId,...conversation,...([1,2].includes(message.mediaVersion)?{mediaVersion:message.mediaVersion}:{})},welcome:{type:'welcome',role:'player',...result,...([1,2].includes(message.mediaVersion)?{imageManifest:engine.imageManifest()}:{})}};
+  return {identity:{role:'player',playerId:result.playerId,...conversation,...([1,2].includes(message.mediaVersion)?{mediaVersion:message.mediaVersion}:{})},welcome:{type:'welcome',role:'player',...result,...([1,2].includes(message.mediaVersion)?{imageManifest:engine.imageManifest()}:{})},freshPlayer};
 }
-export function safeError(error) {
-  return {type:'error',...(error.name === 'EngineError' ? {code: error.code} : {}),message:error.status || error.name === 'EngineError' ? error.message : 'The room could not complete that action. Please retry.'};
+export function safeError(error, command?: DataRecord) {
+  const scope=command?.type==='autoplay'?'autoplay':command?.type==='room_mode'?'room-mode':null;
+  const reference=scope&&typeof command.requestId==='string'&&command.requestId.length<=80;
+  return {type:'error',...(error.name === 'EngineError' ? {code: error.code} : {}),message:error.status || error.name === 'EngineError' ? error.message : 'The room could not complete that action. Please retry.',...(reference?{scope,requestId:command.requestId}:{})};
 }
 /** Share expensive public state construction, keeping each participant's answer separate. */
 export function snapshotBatch(engine, encoded = false) {
@@ -39,7 +44,7 @@ export function snapshotBatch(engine, encoded = false) {
     const key = `${identity.role === 'host'}:${identity.mediaVersion || 0}:${identity.conversationVersion === 1}`;
     let common = cache.get(key);
     if (!common) {common = engine.snapshot(identity.role === 'host', null, {media: identity.mediaVersion || false, conversation: identity.conversationVersion === 1});common.role=identity.role==='host'?'host':'player';cache.set(key, common);}
-    const me = engine._me(identity.playerId);
+    const me = engine._me(engine.playerIdFor(identity));
     if(encoded){
       let text=messages.get(key);if(!text){text=JSON.stringify({type:'state',state:common});messages.set(key,text);}
       return me?text.slice(0,-2)+',"me":'+JSON.stringify(me)+'}}':text;
@@ -48,6 +53,10 @@ export function snapshotBatch(engine, encoded = false) {
   };
 }
 export function allowMessage(identity,now=Date.now(),type='') {
+  if(type==='avatar_update'){
+    if(now-(identity.avatarUpdatedAt??-Infinity)<1200)return false;
+    identity.avatarUpdatedAt=now;return true;
+  }
   // Chat spam must not consume a participant's answer allowance.
   const typing=type==='chat_typing',social=/^(?:chat_|announce$)/.test(type);
   const windowKey=typing?'typingWindowStart':social?'chatWindowStart':'windowStart';

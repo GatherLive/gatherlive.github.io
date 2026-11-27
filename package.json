@@ -1,6 +1,6 @@
 {
   "name": "gather-quiz",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "private": true,
   "type": "module",
   "description": "Open-source live quizzes with rounds and optional rewards.",
@@ -13,6 +13,12 @@
     "typecheck": "tsc -p tsconfig.client.json && tsc -p tsconfig.server.json"
   },
   "dependencies": {
+    "@dicebear/core": "11.0.0",
+    "@dicebear/styles": "11.0.0",
+    "@multiavatar/multiavatar": "1.0.7",
+    "boring-avatars": "2.0.4",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
     "ws": "8.22.0"
   },
   "devDependencies": {

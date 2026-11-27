@@ -1,10 +1,13 @@
+import {resultLives} from '../lives.js';
+
 export function createResultsParticipantsView(viewContext) {
     function participants() {
+        const max = viewContext.data.maxLives, points = !max || viewContext.data.hasPoints;
         if (viewContext.state.student) {
             const p = viewContext.data.participantStats.find(item => item.player.id === viewContext.state.student);
             if (!p)
                 return '';
-            return `<section class="analytics-panel participant-report"><button class="quiet-button participant-back" data-result="all-participants">${viewContext.icon('back', 16)} Participants</button><div class="participant-heading"><h2 tabindex="-1" dir="auto">${viewContext.esc(p.player.name)}</h2><button class="btn" data-result="student-export">${viewContext.icon('download', 16)} Download</button></div><dl class="detail-metrics"><div><dt>Points</dt><dd>${viewContext.fmt(p.score)}</dd></div><div><dt>Accuracy</dt><dd>${viewContext.rate(p.accuracy)}</dd></div><div><dt>Answered</dt><dd>${p.answered} <span>/ ${p.eligible}</span></dd></div></dl><section class="participant-answers">${p.rows.map(viewContext.participantAnswer).join('') || '<p class="muted">No responses.</p>'}</section></section>`;
+            return `<section class="analytics-panel participant-report"><button class="quiet-button participant-back" data-result="all-participants">${viewContext.icon('back', 16)} Participants</button><div class="participant-heading"><h2 tabindex="-1" dir="auto">${viewContext.esc(p.player.name)}${max && p.winner ? '<small class="report-winner">Winner</small>' : ''}</h2><button class="btn" data-result="student-export">${viewContext.icon('download', 16)} Download</button></div><dl class="detail-metrics">${max ? `<div><dt>Lives remaining</dt><dd>${resultLives(p.lives, max)}</dd></div>` : ''}${points ? `<div><dt>Points</dt><dd>${viewContext.fmt(p.score)}</dd></div>` : ''}<div><dt>Accuracy</dt><dd>${viewContext.rate(p.accuracy)}</dd></div><div><dt>Answered</dt><dd>${p.answered} <span>/ ${p.eligible}</span></dd></div></dl><section class="participant-answers">${p.rows.map(viewContext.participantAnswer).join('') || '<p class="muted">No responses.</p>'}</section></section>`;
         }
         const query = viewContext.state.search.toLocaleLowerCase(), rows = viewContext.data.participantStats.filter(p => p.player.name.toLocaleLowerCase().includes(query));
         rows.sort((a, b) => {

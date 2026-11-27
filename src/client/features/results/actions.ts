@@ -1,3 +1,4 @@
+import {lifeStandings, resultHasPoints, startingLives} from './lives.js';
 import type {AppContext} from '../../app/context.js';
 import { download, slug, dateLabel, esc, $ } from '../../core/dom.js';
 export function createFeaturesResultsActions(context: AppContext) {
@@ -12,11 +13,11 @@ export function createFeaturesResultsActions(context: AppContext) {
     const renderDashboard = (...args) => context.renderDashboard(...args);
     const toast = (...args) => context.toast(...args);
     return { actions: {
-            'report-csv': async el => { const report = await context.loadSavedReport(el.dataset.id); download(`${slug(report.quiz_title || 'quiz')}-results.csv`, csvFor(report.results?.leaderboard || report.results?.players || (Array.isArray(report.results) ? report.results : []), report.results?.roundResults || []), 'text/csv;charset=utf-8'); },
+            'report-csv': async el => { const report = await context.loadSavedReport(el.dataset.id); download(`${slug(report.quiz_title || 'quiz')}-results.csv`, csvFor(report.results?.leaderboard || report.results?.players || (Array.isArray(report.results) ? report.results : []), report.results?.roundResults || [], startingLives(report.results ?? {}), report.results?.competition?.winners ?? report.results?.winners ?? [], resultHasPoints(report.results ?? {})), 'text/csv;charset=utf-8'); },
             'report-view': async el => { const item = S.reports.find(r => r.id === el.dataset.id); if (item?.isDetailed) {
                 location.hash = '#results/saved/' + item.id;
                 return;
-            } const report=await context.loadSavedReport(el.dataset.id); if(location.hash!=='#dashboard')return; const players = report.results?.leaderboard || report.results?.players || (Array.isArray(report.results) ? report.results : []); modal(report.quiz_title || 'Quiz results', `<p>${dateLabel(report.created_at)} · Code ${esc(report.room_code)}</p><div class="report-detail">${report.results?.roundResults?.length ? roundHistory(report.results.roundResults) : leaderboard(players)}</div>`, `<button class="btn primary" data-action="report-csv" data-id="${report.id}">Download CSV</button>`); },
+            } const report=await context.loadSavedReport(el.dataset.id); if(location.hash!=='#dashboard')return; const players = report.results?.leaderboard || report.results?.players || (Array.isArray(report.results) ? report.results : []); modal(report.quiz_title || 'Quiz results', `<p>${dateLabel(report.created_at)} · Code ${esc(report.room_code)}</p><div class="report-detail">${report.results?.roundResults?.length ? roundHistory(report.results.roundResults, true, startingLives(report.results)) : startingLives(report.results ?? {}) ? lifeStandings(report.results.overallLeaderboard ?? players, startingLives(report.results), {points: resultHasPoints(report.results)}) : leaderboard(players)}</div>`, `<button class="btn primary" data-action="report-csv" data-id="${report.id}">Download CSV</button>`); },
             'delete-report': el => {
                 const report = S.reports.find(item => item.id === el.dataset.id);
                 if (!report)

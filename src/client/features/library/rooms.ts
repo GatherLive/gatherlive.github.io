@@ -30,7 +30,25 @@ export function createFeaturesLibraryRooms(context: AppContext) {
         if (S.roomsError)
             return `<div class="room-list-notice"><span>Rooms unavailable</span><button class="quiet-button" data-action="refresh-rooms">Try again</button></div>`;
         const rooms = S.openRooms.filter(isOpenRoom), phases = { lobby: 'Waiting', countdown: 'Starting', question: 'In progress', reveal: 'Between questions', round_results: 'Round results' };
-        return `<section class="open-rooms" aria-label="Open rooms"><div class="room-list-tools"><button class="quiet-button" data-action="refresh-rooms">Refresh</button>${rooms.length ? '<button class="quiet-button room-close-button" data-action="close-all-rooms">Close all rooms</button>' : ''}</div>${rooms.length ? `<div class="quiz-grid">${rooms.map(room => `<article class="quiz-card card open-room-card"><div class="row between"><div class="quiz-illustration">${icon('users', 21)}</div><span class="pill">${esc(phases[room.phase] || 'Open')}</span></div><h3>${esc(room.title)}</h3><div class="quiz-meta"><b class="open-room-code">${esc(room.code)}</b><span>·</span><span>${Number(room.participants) || 0} player${Number(room.participants) === 1 ? '' : 's'}</span></div><div class="quiz-card-footer"><button class="quiet-button room-close-button" data-action="close-room" data-code="${esc(room.code)}">Close</button><button class="btn small primary" data-action="rejoin-room" data-code="${esc(room.code)}">${icon('play', 13)} Rejoin</button></div></article>`).join('')}</div>` : `<div class="empty"><div class="empty-icon">${icon('users', 27)}</div><h2>No open rooms</h2></div>`}</section>`;
+        const cards = rooms.map(room => {
+            const code = esc(room.code);
+            const count = Number(room.participants) || 0;
+            const status = room.paused ? 'Paused' : phases[room.phase] || 'Open';
+            const details = room.study ? '<span>Solo play</span>' :
+                `<b class="open-room-code">${code}</b>${room.mode === 'group-study' ? '<span>Group play</span>' : ''}<span>·</span><span>${count} player${count === 1 ? '' : 's'}</span>`;
+            return `<article class="quiz-card card open-room-card">
+                <div class="row between"><div class="quiz-illustration">${icon('users', 21)}</div><span class="pill">${esc(status)}</span></div>
+                <h3>${esc(room.title)}</h3><div class="quiz-meta">${details}</div>
+                <div class="quiz-card-footer">
+                    <button class="quiet-button room-close-button" data-action="close-room" data-code="${code}">Close</button>
+                    <button class="btn small primary" data-action="rejoin-room" data-code="${code}"${room.study ? ' aria-label="Resume practice"' : ''}>${icon('play', 13)} ${room.study ? '<span class="open-room-resume-label">Resume<span> practice</span></span>' : 'Rejoin'}</button>
+                </div>
+            </article>`;
+        }).join('');
+        return `<section class="open-rooms" aria-label="Open rooms">
+            <div class="room-list-tools"><button class="quiet-button" data-action="refresh-rooms">Refresh</button>${rooms.length ? '<button class="quiet-button room-close-button" data-action="close-all-rooms">Close all rooms</button>' : ''}</div>
+            ${cards ? `<div class="quiz-grid">${cards}</div>` : `<div class="empty"><div class="empty-icon">${icon('users', 27)}</div><h2>No open rooms</h2></div>`}
+        </section>`;
     }
     function confirmCloseRoom(code) {
         const room = S.openRooms.find(r => r.code === code && isOpenRoom(r));

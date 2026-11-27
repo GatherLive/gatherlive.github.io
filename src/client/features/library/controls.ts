@@ -19,5 +19,5 @@ export function libraryControls(state,tags){
 }
 
 export function libraryFooter(){
- return `<footer class="library-footer" aria-label="Quiz tools"><button data-action="sample">Sample quiz</button><label class="file-label">Import quiz<input type="file" accept="application/json,.json" id="import-quiz" aria-label="Import quiz"></label><button data-action="copy-ai-prompt">Copy AI prompt</button></footer>`;
+ return `<footer class="library-footer" aria-label="Quiz tools"><button data-action="sample">Sample quiz</button><label class="file-label">Import quiz<input type="file" accept="application/json,.json" id="import-quiz" aria-label="Import quiz"></label><button data-action="copy-ai-prompt">Host quiz prompt</button><button data-action="copy-study-prompt">Solo play prompt</button></footer>`;
 }

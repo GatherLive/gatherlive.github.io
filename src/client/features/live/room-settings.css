@@ -8,3 +8,15 @@
 .join-verification-hint{margin:0 0 14px;color:var(--soft);font-size:13px;line-height:1.5}
 .room-setting-save[hidden]{display:none}.room-setting-row .room-setting-save{color:var(--text)}
 @media(prefers-reduced-motion:reduce){.room-setting-row input[role=switch],.room-setting-row input[role=switch]:before{transition:none}}
+.room-chat-setting { min-height: 50px; padding: 9px 0; gap: 12px; text-align: start; }
+.room-chat-setting + .room-chat-setting { border-top: 1px solid var(--line); }
+.room-chat-setting small { color: var(--muted); font-size: 12px; }
+.room-chat-setting:disabled { opacity: .55; cursor: default; }
+.lobby-verification-link { display: inline-flex; align-items: center; margin-bottom: 10px; }
+.room-mode-options { padding: 0; margin: 0 0 14px; border: 0; }
+.room-mode-option { display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 8px 0; cursor: pointer; }
+.room-mode-option + .room-mode-option { border-top: 1px solid var(--line); }
+.room-mode-option input { accent-color: var(--accent); flex: none; }
+.room-mode-option strong { display: block; font-size: 14px; font-weight: 550; }
+.room-mode-option small { display: block; color: var(--muted); margin-top: 4px; font-size: 12px; }
+.room-game-reveal { margin: 14px 0 0; }

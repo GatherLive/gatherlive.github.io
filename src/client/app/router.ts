@@ -50,8 +50,8 @@ export function createAppRouter(context: AppContext) {
         }
         if (path === 'account') { location.replace('#settings/account'); return; }
         if (path === 'settings') {
-            if (!activeUser() && parts[0] !== 'about') { S.authReturnTo = location.hash; S.authMode = 'login'; authView(); return; }
-            context.settingsView(['account','usage','about'].includes(parts[0])?parts[0]:''); return;
+            if (!activeUser() && !['about','guide'].includes(parts[0])) { S.authReturnTo = location.hash; S.authMode = 'login'; authView(); return; }
+            context.settingsView(['account','usage','about','guide'].includes(parts[0])?parts[0]:''); return;
         }
         if (path === 'host' || path === 'dashboard' || path === 'account' || path === 'edit' || path === 'results') {
             if (!activeUser()) {

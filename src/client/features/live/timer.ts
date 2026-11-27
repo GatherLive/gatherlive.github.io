@@ -7,11 +7,12 @@ export function createFeaturesLiveTimer(context: AppContext) {
         const st = S.roomState;
         if (!st)
             return;
-        const remainingMs = st.deadline == null ? null : Math.max(0, st.deadline - (S.clock?.now() ?? Date.now()));
+        const now = st.autoplay?.clockPaused ? st.autoplay.pausedAt : S.clock?.now() ?? Date.now();
+        const remainingMs = st.deadline == null ? null : Math.max(0, st.deadline - now);
         const remaining = remainingMs == null ? null : Math.ceil(remainingMs / 1000);
         const countdown = $('#countdown-number');
         if (st.phase === 'countdown' && countdown) {
-            const waiting = remaining === 0 && !!st.mediaPreparation;
+            const waiting = !st.autoplay?.clockPaused && remaining === 0 && !!st.mediaPreparation;
             countdown.textContent = String(waiting ? '…' : remaining ?? '—');
             const media = $('#countdown-media');
             if (media) {
@@ -27,8 +28,8 @@ export function createFeaturesLiveTimer(context: AppContext) {
         if (!timer)
             return;
         const seconds = st.phase === 'question' ? remaining ?? 0 : 0;
-        $('span', timer).textContent = String(st.phase === 'reveal' ? '✓' : st.deadline == null ? '∞' : seconds);
-        timer.classList.toggle('urgent', seconds <= 5 && st.phase === 'question');
+        $('span', timer).textContent = String(st.deadline == null ? '∞' : seconds);
+        timer.classList.toggle('urgent', seconds <= 5 && st.phase === 'question' && !st.autoplay?.clockPaused);
         const fill = $('#timer-fill');
         if (fill)
             fill.style.width = `${st.phase === 'question' ? Math.max(0, Math.min(100, (remainingMs ?? 0) / ((st.question?.timeLimit || 20) * 1000) * 100)) : 0}%`;

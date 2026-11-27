@@ -32,8 +32,9 @@ Gather uses TypeScript. Edit application code in `src/` and static assets in `pu
 | --- | --- |
 | `home/`, `auth/`, `join/` | Home, sign-in and participant joining. |
 | `library/` | Saved quizzes, tags, filters, open rooms and saved results. |
-| `editor/` | Questions, pin-area controls, game settings and quiz imports/exports. |
-| `live/` | Lobby, room settings, play, answers, timers and reconnects. |
+| `editor/` | Questions, edit history, game settings and quiz imports/exports. |
+| `live/` | Lobby, room settings, answers, timed reveals, host review and reconnects. |
+| `avatars/` | Avatar customization, rendering and artwork credits. |
 | `results/` | Report views, analysis, charts and downloads. |
 | `chat/`, `news/` | Room conversations, announcements and site news. |
 | `account/`, `settings/`, `legal/` | Account actions, usage, About, support and policies. |

@@ -21,7 +21,9 @@ def main():
     version = subprocess.check_output([node, '--version'], text=True).strip()
     if int(version.lstrip('v').split('.')[0]) < 22:
         sys.exit('Please install Node.js 22 or newer.')
-    if not all((ROOT / 'node_modules' / name / 'package.json').exists() for name in ('ws', 'tsx', 'esbuild')):
+    dependencies = ('ws', 'tsx', 'esbuild', '@dicebear/core', '@dicebear/styles',
+                    '@multiavatar/multiavatar', 'boring-avatars', 'react', 'react-dom')
+    if not all((ROOT / 'node_modules' / name / 'package.json').exists() for name in dependencies):
         npm = shutil.which('npm')
         if not npm:
             sys.exit('npm is required for the first-time setup.')

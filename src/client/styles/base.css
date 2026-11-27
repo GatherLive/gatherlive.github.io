@@ -8,6 +8,7 @@
 :root {
   color-scheme: dark;
   --bg: #151515;
+  background-color: var(--bg);
   --surface: #1d1d1d;
   --raised: #252525;
   --line: #343434;
@@ -1421,6 +1422,7 @@ small {
   background: #0009;
   backdrop-filter: blur(7px);
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   padding: 20px;
   z-index: 30;
@@ -1430,6 +1432,7 @@ small {
   border: 1px solid #484744;
   border-radius: 20px;
   max-width: 470px;
+  min-width: 0;
   width: 100%;
   padding: 28px;
   max-height: 90svh;
@@ -1447,6 +1450,7 @@ small {
 }
 .modal-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 9px;
   margin-top: 25px;
@@ -2128,7 +2132,7 @@ small {
   max-width: 100%;
   overflow-wrap: anywhere;
 }
-.round-tag>span {
+.round-tag-count {
   color: var(--muted);
   font-size: 10px;
   font-weight: 400;
@@ -2159,9 +2163,6 @@ small {
   font-variant-numeric: tabular-nums;
   margin-right: .08em;
   min-width: 1.5em;
-}
-.countdown-end {
-  margin-top: 24px;
 }
 .host-controls {
   justify-content: space-between;
@@ -2613,7 +2614,7 @@ small {
   .round-tag {
     font-size: 11px;
   }
-  .round-tag>span {
+  .round-tag-count {
     font-size: 10px;
   }
 }
@@ -2667,23 +2668,17 @@ small {
   white-space: nowrap;
   color: var(--green);
   padding: 7px 10px;
-  border: 1px solid #89b99a30;
-  background: #89b99a0b;
+  border: 1px solid var(--line);
+  background: var(--surface);
   border-radius: 100px;
 }
 .room-nav .connection.offline {
   color: var(--red);
-  border-color: #db929230;
-  background: #db92920b;
 }
 .room-nav .connection-dot {
   height: 7px;
   width: 7px;
   flex: none;
-  box-shadow: 0 0 0 3px #89b99a15;
-}
-.room-nav .connection.offline .connection-dot {
-  box-shadow: 0 0 0 3px #db929215;
 }
 .connection-retry {
   border: 0;
@@ -3924,9 +3919,6 @@ small {
   margin-top: 10px;
   line-height: 1.18;
 }
-.countdown-state .countdown-end {
-  margin-top: 18px;
-}
 .live-question-screen:not(.live-choice-screen) {
   max-width: 1180px;
   margin: 0 auto;
@@ -4381,9 +4373,6 @@ small {
     font-size: 98px;
     margin-top: 0;
   }
-  .countdown-state .countdown-end {
-    margin-top: 4px;
-  }
 }
 /* Keep the composer inside the visible viewport when a phone keyboard opens. */
 .chat-overlay {
@@ -4468,25 +4457,6 @@ small {
 }
 .room-close-button {
   color: var(--red);
-}
-.open-room-card>.row {
-  align-items: flex-start;
-  gap: 12px;
-}
-.open-room-card>.row>.pill {
-  font-size: 11px;
-  max-width: 60%;
-  white-space: normal;
-  text-align: right;
-}
-.open-room-card h3 {
-  margin-bottom: 12px;
-}
-.open-room-card .quiz-meta {
-  margin-bottom: 22px;
-}
-.open-room-card .quiz-card-footer>.quiet-button {
-  padding-left: 0;
 }
 .open-room-code {
   color: var(--text);

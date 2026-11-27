@@ -4,7 +4,7 @@ import { createResultsResponsesView } from './views/responses.js';
 import { createResultsParticipantsView } from './views/participants.js';
 import { createResultsRoundsView } from './views/rounds.js';
 import { createResultsDownloadsView } from './views/downloads.js';
-import { analyze, hasDetails, answerText, correctText, escapeHTML as esc, seconds, typeLabel, reportBase, OPINION_TYPES } from './data.js';
+import { analyze, hasDetails, answerText, correctText, escapeHTML as esc, seconds, typeLabel, reportBase } from './data.js';
 import { reportIcon as icon } from './icons.js';
 import { exportFile, saveBlob, zipFiles } from './export.js';
 import { overviewPies, renderPieChart, bindPieCharts } from './charts.js';
@@ -20,7 +20,7 @@ export function mountResults(root, { report, saved = false, onSave = null, back 
     const expired = () => !state.saved && Date.now() >= (report.finishedAt || 0) + 15 * 60 * 1000;
     const idLabel = () => state.student ? data.players.find(p => p.id === state.student)?.name : '';
     // Live getters keep views connected to this instance, including async route changes.
-    const viewContext = { get answerText() { return answerText; }, get correctText() { return correctText; }, get data() { return data; }, get esc() { return esc; }, get fmt() { return fmt; }, get icon() { return icon; }, get idLabel() { return idLabel; }, get OPINION_TYPES() { return OPINION_TYPES; }, get PAGE() { return PAGE; }, get pager() { return pager; }, get participantAnswer() { return participantAnswer; }, get participants() { return participants; }, get participantTable() { return participantTable; }, get pies() { return pies; }, get rate() { return rate; }, get renderPieChart() { return renderPieChart; }, get report() { return report; }, get RESPONSE_PAGE() { return RESPONSE_PAGE; }, get seconds() { return seconds; }, get state() { return state; }, get table() { return table; }, get typeLabel() { return typeLabel; } };
+    const viewContext = { get answerText() { return answerText; }, get correctText() { return correctText; }, get data() { return data; }, get esc() { return esc; }, get fmt() { return fmt; }, get icon() { return icon; }, get idLabel() { return idLabel; }, get PAGE() { return PAGE; }, get pager() { return pager; }, get participantAnswer() { return participantAnswer; }, get participants() { return participants; }, get participantTable() { return participantTable; }, get pies() { return pies; }, get rate() { return rate; }, get renderPieChart() { return renderPieChart; }, get report() { return report; }, get RESPONSE_PAGE() { return RESPONSE_PAGE; }, get seconds() { return seconds; }, get state() { return state; }, get table() { return table; }, get typeLabel() { return typeLabel; } };
     const { table, pager, participantTable } = createResultsTablesView(viewContext);
     const { overview } = createResultsOverviewView(viewContext);
     const { questionPicker, responses, distributionBars, answerKey, questionView, participantAnswer } = createResultsResponsesView(viewContext);
@@ -196,7 +196,7 @@ export function mountResults(root, { report, saved = false, onSave = null, back 
             render();
             const section = root.querySelector(key === 'page' ? '#participant-rows' : key === 'roundPage' ? '.rounds-report' : '.question-responses');
             if (section) {
-                const label = key === 'responsePage' ? 'Responses' : key === 'roundPage' ? 'Round scores' : 'Participants', range = section.querySelector('.analytics-pager>span')?.textContent || '';
+                const label = key === 'responsePage' ? 'Responses' : key === 'roundPage' ? 'Round results' : 'Participants', range = section.querySelector('.analytics-pager>span')?.textContent || '';
                 section.tabIndex = -1;
                 section.setAttribute('role', 'group');
                 section.setAttribute('aria-label', label + ' ' + range);

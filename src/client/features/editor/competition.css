@@ -1,0 +1,30 @@
+.competition-editor .competition-group {
+  min-width: 0;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+.competition-editor .competition-group + .competition-group {
+  padding-top: 6px;
+}
+.competition-editor legend {
+  padding: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.competition-editor .checkbox-row { min-height: 44px; margin: 4px 0; align-items: center; }
+.competition-editor .competition-fields { margin-top: 8px; }
+.competition-editor .field { min-width: 0; margin-bottom: 10px; }
+.competition-editor .field :is(input, select),
+.competition-secret :is(input, select) { min-width: 0; min-height: 44px; max-width: 100%; }
+.competition-editor .competition-hint { margin: 0; color: var(--muted); font-size: 12px; }
+.competition-secret { margin-top: 12px; }
+
+@media (max-width: 560px) {
+  .competition-editor .competition-team-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .competition-editor .competition-team-fields .competition-select { grid-column: 1 / -1; }
+}
+.editor-history-actions { display: inline-flex; align-items: center; gap: 3px; }
+.editor-history-actions .icon-btn { flex: none; }
+.question-defaults { margin: -4px 0 14px; color: var(--soft); font-size: 13px; }

@@ -2,8 +2,10 @@ import type {AppContext} from '../../app/context.js';
 import { quizTags } from '../../core/tags.js';
 import { $, uid } from '../../core/dom.js';
 import {optimizeQuizImage} from '../media/optimize.js';
+import {QuizHistory} from './history.js';
 export function createFeaturesEditorData(context: AppContext) {
     const S = context.state;
+    const history = new QuizHistory();
     const renderEditor = (...args) => context.renderEditor(...args);
     const loading = (...args) => context.loading(...args);
     const db = (...args) => context.db(...args);
@@ -14,6 +16,7 @@ export function createFeaturesEditorData(context: AppContext) {
     const getToken = (...args) => context.getToken(...args);
     const request = (...args) => context.request(...args);
     async function openEditor(id) {
+        S.studyQuestionsShownFor = null;
         if (S.draft?.id === id) {
             renderEditor();
             return;
@@ -42,37 +45,66 @@ export function createFeaturesEditorData(context: AppContext) {
         S.dirty = false;
         renderEditor();
     }
-    function markDirty() { S.dirty = true; const state = $('#save-state'); if (state)
-        state.textContent = 'Unsaved'; }
+    const editorPosition = () => ({questionId: S.draft?.questions[S.questionIndex]?.id, roundId: S.currentRoundId});
+    function bindEditorHistory() { history.bind(S.draft, editorPosition(), S.dirty); }
+    function updateEditorHistory() {
+        const state = $('#save-state');
+        if (state) state.textContent = S.saving ? 'Saving…' : S.dirty ? 'Unsaved' : 'Saved';
+        const undo = $<HTMLButtonElement>('[data-action="undo-quiz"]'), redo = $<HTMLButtonElement>('[data-action="redo-quiz"]');
+        if (undo) undo.disabled = S.saving || !history.canUndo;
+        if (redo) redo.disabled = S.saving || !history.canRedo;
+    }
+    function markDirty(source?: HTMLElement) {
+        history.record(S.draft, editorPosition(), source);
+        S.dirty = history.dirty;
+        updateEditorHistory();
+    }
+    function moveHistory(undo: boolean) {
+        if (S.saving || !S.draft || !$('.editor-page')) return;
+        const position = history.move(S.draft, undo);
+        if (!position) return;
+        S.questionIndex = Math.max(0, S.draft.questions.findIndex(question => question.id === position.questionId));
+        S.currentRoundId = position.roundId;
+        S.dirty = history.dirty;
+        renderEditor();
+        $<HTMLButtonElement>(`[data-action="${undo ? 'undo-quiz' : 'redo-quiz'}"]:not(:disabled)`)?.focus({preventScroll: true});
+    }
     async function saveQuiz(silent = false) {
         if (S.saving)
             throw new Error('Your quiz is still saving. Try again in a moment.');
         context.commitQuizTag?.();
         validateDraft(S.draft);
+        history.record(S.draft, editorPosition());
+        const submitted = history.content;
+        const id = S.draft.id, owner = activeUser().id;
         S.saving = true;
-        $('#save-state') && ($('#save-state').textContent = 'Saving…');
+        updateEditorHistory();
         try {
-            const { id, title, description, questions, settings } = S.draft;
-            const payload = { id, owner_id: activeUser().id, title: title.trim(), description, collection: '', tags: quizTags(S.draft), questions, settings: { ...settings, tags: quizTags(S.draft) }, updated_at: new Date().toISOString() };
+            const {title, description, questions, settings} = submitted;
+            const tags = quizTags(submitted);
+            const payload = {id, owner_id: owner, title: title.trim(), description, collection: '', tags, questions, settings: {...settings, tags}, updated_at: new Date().toISOString()};
             const result = await db('giveaway_quizzes?on_conflict=id', { method: 'POST', body: payload, headers: { Prefer: 'resolution=merge-duplicates,return=representation' } });
             const saved = result[0];
-            S.draft = { ...structuredClone(saved), tags: quizTags(saved) };
-            S.dirty = false;
+            if (activeUser()?.id !== owner) return saved;
+            if (S.draft?.id === id) {
+                const same = submitted === history.content;
+                const savedDraft = {...structuredClone(saved), tags: quizTags(saved)};
+                S.draft = same ? savedDraft : {...savedDraft, ...structuredClone(history.content)};
+                history.markSaved(savedDraft, submitted);
+                S.dirty = history.dirty;
+            }
             const idx = S.quizzes.findIndex(q => q.id === saved.id);
             if (idx >= 0)
                 S.quizzes[idx] = saved;
             else
                 S.quizzes.unshift(saved);
-            if ($('#save-state'))
-                $('#save-state').textContent = 'Saved';
             if (!silent)
                 toast('Quiz saved.');
             return saved;
         }
         finally {
             S.saving = false;
-            if (S.dirty && $('#save-state'))
-                $('#save-state').textContent = 'Unsaved';
+            updateEditorHistory();
         }
     }
     async function uploadImage(file, target) {
@@ -82,12 +114,12 @@ export function createFeaturesEditorData(context: AppContext) {
             throw new Error('Choose a JPG, PNG or WebP image.');
         if (file.size > 3 * 1024 * 1024)
             throw new Error('Keep your image under 3 MB.');
-        const q = S.draft.questions[S.questionIndex], draftId = S.draft.id;
+        const questionId = S.draft.questions[S.questionIndex].id, draftId = S.draft.id;
         const upload = await optimizeQuizImage(file);
         const result=await request(context.apiURL('/api/account/images'),{method:'POST',headers:{Authorization:'Bearer '+await getToken(),'Content-Type':upload.type},body:upload});
         const url=result.url; S.accountUsage=null;
-        if (S.draft?.id !== draftId)
-            return;
+        const q = S.draft?.id === draftId && S.draft.questions.find(question => question.id === questionId);
+        if (!q) return;
         if (target === 'question')
             q.image = url;
         else {
@@ -99,5 +131,16 @@ export function createFeaturesEditorData(context: AppContext) {
         renderEditor();
         toast('Image uploaded.');
     }
-    return { openEditor, markDirty, saveQuiz, uploadImage };
+    return {openEditor, bindEditorHistory, updateEditorHistory, markDirty, saveQuiz, uploadImage,
+        actions: {'undo-quiz': () => moveHistory(true), 'redo-quiz': () => moveHistory(false)},
+        keys: [(event: KeyboardEvent) => {
+            if (!(event.ctrlKey || event.metaKey) || event.altKey || !$('.editor-page') ||
+                event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable], .modal')) return false;
+            const key = event.key.toLowerCase();
+            if (key !== 'z' && key !== 'y') return false;
+            event.preventDefault();
+            moveHistory(key === 'z' && !event.shiftKey);
+            return true;
+        }]
+    };
 }

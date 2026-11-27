@@ -72,11 +72,11 @@ export class RoomConversation {
     delete identity.chatTypingUntil;
     return senderId && wasTyping ? {type: 'chat_typing', senderId, remainingMs: 0} : null;
   }
-  actor(identity, players) {
-    if(identity.role==='host')return {id:'host',name:'Host',role:'host'};
+  actor(identity, players, hostAvatar) {
+    if(identity.role==='host')return {id:'host',name:'Host',role:'host',avatar:hostAvatar};
     const player=identity.role==='player'&&players.get(identity.playerId);
     if(!player)fail('Join the room before chatting.');
-    return {id:player.id,name:player.name,role:'player'};
+    return {id:player.id,name:player.name,role:'player',avatar:player.avatar};
   }
   publicMessage(message, actorId) {
     const {requestId,reactions,...result}=message;
@@ -98,8 +98,8 @@ export class RoomConversation {
     if(this.roomRate.count>=25)fail('Chat is busy. Try again in a moment.');
     entry.last=now;entry.count++;this.rates.set(key,entry);this.roomRate.count++;
   }
-  command(identity: RoomIdentity, message: DataRecord, {phase,players,now}): DataRecord {
-    const actor=this.actor(identity,players),host=actor.role==='host';
+  command(identity: RoomIdentity, message: DataRecord, {phase,players,now,hostPlayerId=null,hostAvatar=null}): DataRecord {
+    const actor=this.actor(identity,players,hostAvatar),host=actor.role==='host';
     const requestId=typeof message.requestId==='string'&&/^[a-zA-Z0-9-]{1,80}$/.test(message.requestId)?message.requestId:null;
     if(!requestId)fail('A message reference is required.');
     if(phase==='finished')fail('This quiz has ended. Chat has been cleared.');
@@ -108,13 +108,13 @@ export class RoomConversation {
     if(message.type==='chat_members'){
       if(identity.chatSubscribed===false||!this.metadata(phase).open)fail('Chat is closed for this part of the quiz.');
       if(!host&&!this.config.chatMentions)fail('Participant mentions are turned off.');
-      return {channel:'conversation',type:'chat_ack',requestId,members:mentionMembers(message.query??'',players,actor)};
+      return {channel:'conversation',type:'chat_ack',requestId,members:mentionMembers(message.query??'',players,actor,hostPlayerId)};
     }
     if(message.type==='chat_send'){
       const duplicate=this.messages.find(item=>item.senderId===actor.id&&item.requestId===requestId);
       if(duplicate)return {channel:'conversation',type:'chat_ack',requestId,messageId:duplicate.id};
       const body=text(message.text,400);
-      const mentions=messageMentions(message.mentions,body,{host,enabled:this.config.chatMentions,players});
+      const mentions=messageMentions(message.mentions,body,{host,enabled:this.config.chatMentions,players,hostPlayerId});
       let replyTo=null;
       if(message.replyTo!=null){
         if(!this.config.chatReplies)fail('Replies are turned off.');
@@ -123,7 +123,7 @@ export class RoomConversation {
         replyTo=parent.id;
       }
       this.rate(actor,message.type,now);
-      const item={id:crypto.randomUUID(),senderId:actor.id,senderName:actor.name,role:actor.role,text:body,mentions,replyTo,at:now,requestId,reactions:{}};
+      const item={id:crypto.randomUUID(),senderId:actor.id,senderName:actor.name,role:actor.role,text:body,mentions,replyTo,at:now,requestId,reactions:{},...(actor.avatar?{senderAvatar:actor.avatar}:{})};
       this.messages.push(item);if(this.messages.length>60)this.messages.shift();
       event={type:'chat_message',message:this.publicMessage(item,null)};
     }else if(message.type==='chat_react'){

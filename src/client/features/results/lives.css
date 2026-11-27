@@ -1,0 +1,52 @@
+.life-game-finish, .life-round-history {
+  width: min(100%, 640px);
+  margin: 0 auto 16px;
+}
+.life-game-finish { display: grid; gap: 10px; }
+.life-result-card {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+.life-result-card h2 { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+.life-result-card h2:last-child { margin-block-end: 0; text-align: center; }
+.life-result-team { margin: 0 0 8px; font-size: 15px; color: var(--accent); }
+.life-result-list { list-style: none; padding: 0; margin: 0; }
+.life-result-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 42px;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.life-result-list li strong { min-width: 0; overflow-wrap: anywhere; }
+.life-result-list small { font-weight: 400; color: var(--muted); }
+.result-lives {
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
+  align-items: center;
+  color: var(--accent);
+  vertical-align: middle;
+}
+.result-heart { display: inline-flex; }
+.result-heart svg { fill: currentColor; }
+.result-heart-empty { color: var(--muted); }
+.result-heart-empty svg { fill: none; }
+.result-metrics {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+}
+.result-points { white-space: nowrap; color: var(--soft); font-size: 12px; font-variant-numeric: tabular-nums; }
+.result-eliminated { flex: none; color: var(--muted); font-size: 12px; }
+.life-round-history > summary { cursor: pointer; font-size: 13px; padding-block: 12px; }
+.report-winner { display: block; margin-top: 4px; color: var(--accent); font-size: 12px; }
+.report-life-outcome { margin: 0 0 14px; }
+.report-life-outcome p { margin-top: 6px; overflow-wrap: anywhere; }

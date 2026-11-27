@@ -1,0 +1,85 @@
+.room-tools { flex-wrap: wrap; }
+.room-chat-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-inline-start: auto;
+}
+.room-autoplay-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--soft);
+  padding: 6px 9px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.room-autoplay-timer svg { color: var(--muted); }
+.modal:has(> .autoplay-form) > .modal-actions { display: none; }
+.autoplay-form [hidden] { display: none; }
+.autoplay-start,
+.autoplay-estimate,
+.autoplay-answer-setting,
+.autoplay-timing,
+.autoplay-playback { border-bottom: 1px solid var(--line); }
+.autoplay-start { padding: 6px 0 12px; }
+.autoplay-start-option { margin-top: 10px; }
+.autoplay-estimate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 10px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.autoplay-estimate strong { color: var(--text); font-weight: 550; font-variant-numeric: tabular-nums; }
+.autoplay-answer-setting { padding: 12px 0; gap: 12px; }
+.autoplay-answer-setting small { margin-top: 2px; font-size: 12px; }
+.autoplay-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 166px);
+  align-items: center;
+  gap: 6px 12px;
+}
+.autoplay-start-mode { grid-template-columns: minmax(0, 1fr) minmax(0, 180px); }
+.autoplay-field label { font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.autoplay-field .input { min-height: 44px; font-size: 13px; padding: 8px 10px; }
+.autoplay-hint { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+.autoplay-start-option > .autoplay-hint { margin-top: 7px; text-align: end; }
+.autoplay-timing summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  cursor: pointer;
+  list-style: none;
+}
+.autoplay-timing summary::-webkit-details-marker { display: none; }
+.autoplay-timing summary svg { color: var(--muted); }
+.autoplay-timing[open] summary svg { transform: rotate(90deg); }
+.autoplay-timing-fields { display: grid; gap: 10px; padding-bottom: 12px; }
+.autoplay-timing-fields .checkbox-row { min-height: 40px; margin: 0; }
+.autoplay-duration { display: grid; gap: 6px; grid-template-columns: minmax(0, 1fr) 90px; }
+.autoplay-unit { align-self: center; padding-inline-start: 10px; font-size: 13px; color: var(--muted); }
+.autoplay-playback,
+.autoplay-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 8px;
+}
+.autoplay-playback { padding: 10px 0; }
+.autoplay-footer { padding-top: 12px; }
+.autoplay-footer .primary { margin-inline-start: auto; }
+.autoplay-form .btn,
+.autoplay-form .quiet-button { min-height: 44px; }
+
+@media (max-width: 380px) {
+  .autoplay-start-mode { grid-template-columns: minmax(0, 1fr) minmax(0, 170px); }
+  .autoplay-timing-fields .autoplay-field { grid-template-columns: minmax(0, 1fr); }
+}

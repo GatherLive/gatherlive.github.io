@@ -1,0 +1,21 @@
+.open-room-card { container-type: inline-size; }
+.open-room-card > .row {
+  align-items: flex-start;
+  gap: 12px;
+}
+.open-room-card > .row > .pill {
+  font-size: 11px;
+  max-width: 60%;
+  white-space: normal;
+  text-align: center;
+  text-wrap: balance;
+}
+.open-room-card h3 { margin-bottom: 12px; overflow-wrap: anywhere; }
+.open-room-card .quiz-meta { margin-bottom: 22px; }
+.open-room-card .quiz-card-footer > .quiet-button { padding-inline-start: 0; }
+
+@container (max-width: 184px) {
+  .open-room-card .quiz-card-footer > .quiet-button { padding-inline-end: 0; }
+  .open-room-card .quiz-card-footer > .btn { padding-inline: 10px; gap: 6px; }
+  .open-room-resume-label > span { display: none; }
+}

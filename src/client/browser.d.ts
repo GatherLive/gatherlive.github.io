@@ -9,6 +9,7 @@ declare global {
   interface Window {
     GATHER_CONFIG?: PublicConfig;
     turnstile?: Turnstile;
+    gatherTurnstileLoaded?: () => void;
     pdfMake?: DataRecord;
   }
   interface Navigator { connection?: {saveData?: boolean; effectiveType?: string} }

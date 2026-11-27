@@ -1,5 +1,15 @@
 import type {AppContext} from '../../app/context.js';
 import { esc, $, download, slug } from '../../core/dom.js';
+import {MAX_REVIEW_NOTE_LENGTH} from '../../core/live-game.js';
+import {openAvatarPicker, readAvatarProfile} from '../avatars/picker.js';
+import {toggleGameStageLives} from './game-stage.js';
+import {answerLabel} from './competition.js';
+import {resultHasPoints, startingLives} from '../results/lives.js';
+
+const quickReplies = [
+    'Doesn’t match the prompt', 'Wrong category', 'Not a valid example', 'Outside the time period',
+    'Answer is incomplete', 'Please be more specific', 'Spelling accepted', 'Alternative accepted'
+];
 export function createFeaturesLiveActions(context: AppContext) {
     const S = context.state;
     const zoomAnswer = (...args) => context.zoomAnswer(...args);
@@ -20,6 +30,37 @@ export function createFeaturesLiveActions(context: AppContext) {
     const backend = (...args) => context.backend(...args);
     const toast = (...args) => context.toast(...args);
     const csvFor = (...args) => context.csvFor(...args);
+    const competitionCommand = (type: string, values = {}) => {
+        const questionId = S.roomState?.question?.id;
+        return S.room?.role === 'host' && S.connected && questionId && send({type, questionId, ...values});
+    };
+    function openReviewNote(button: HTMLElement) {
+        const state = S.roomState;
+        const row = state?.competition?.review?.rows?.find(entry => entry.playerId === button.dataset.id);
+        if (!row || S.room?.role !== 'host' || state.competition.review.stage !== 'review') return;
+        const target = `data-id="${esc(row.playerId)}" data-question-id="${esc(state.question.id)}"`;
+        modal('Review answer', `<p class="competition-note-answer" dir="auto">${esc(answerLabel(state, row.answer))}</p>
+            <div class="field"><label for="review-quick-reply">Quick reply</label><select id="review-quick-reply"><option value="">Choose a reply</option>${quickReplies.map(reply => `<option>${esc(reply)}</option>`).join('')}</select></div>
+            <div class="field"><label for="review-note">Note for everyone</label><input id="review-note" type="text" maxlength="${MAX_REVIEW_NOTE_LENGTH}" value="${esc(row.note || '')}"></div>`,
+            `<button class="btn" type="button" data-action="competition-send-note" ${target}>Post note</button>
+             <button class="btn danger" type="button" data-action="competition-send-note" data-reject ${target}>Reject answer</button>`);
+        $<HTMLSelectElement>('#review-quick-reply')?.addEventListener('change', event => {
+            const reply = (event.currentTarget as HTMLSelectElement).value;
+            if (reply) $<HTMLInputElement>('#review-note').value = reply;
+        });
+    }
+    function sendReviewNote(button: HTMLElement) {
+        const input = $<HTMLInputElement>('#review-note');
+        if (!input || S.roomState?.question?.id !== button.dataset.questionId) return closeModal();
+        const note = input.value.trim(), reject = button.hasAttribute('data-reject');
+        if (!reject && !note) { input.focus(); return toast('Enter a note.', true); }
+        if (competitionCommand('competition_review', {playerId: button.dataset.id, note, ...(reject ? {accepted: false} : {})}))
+            closeModal();
+    }
+    async function hostDraft() {
+        const draft = await saveQuiz(true);
+        await hostQuiz(draft.id, draft.settings);
+    }
     return { actions: {
             'zoom-answer': zoomAnswer,
             'sample': sampleQuiz,
@@ -29,9 +70,10 @@ export function createFeaturesLiveActions(context: AppContext) {
                 markDirty();
                 renderEditor();
             } },
-            'host-draft': async () => { const d = await saveQuiz(true); await hostQuiz(d.id, d.settings); },
+            'host-draft': hostDraft,
             'host-quiz': el => hostQuiz(el.dataset.id),
             'copy-link': copyLink,
+            'copy-room-code': () => context.copyRoomCode(),
             'reconnect': () => { if (S.room && !S.fatalRoomError) {
                 S.retries = 1;
                 return openSocket();
@@ -42,16 +84,49 @@ export function createFeaturesLiveActions(context: AppContext) {
             'room-reveal': () => send({ type: 'reveal' }),
             'room-next': () => send({ type: 'next' }),
             'room-next-round': () => send({ type: 'next_round' }),
+            'toggle-game-lives': toggleGameStageLives,
+            'room-avatar': () => {
+                if (!S.connected || S.roomState?.phase !== 'lobby') return;
+                const code = S.room?.code;
+                const current = S.roomState.me?.avatar ?? S.roomState.hostAvatar ?? readAvatarProfile();
+                openAvatarPicker(context, current, avatar => {
+                    if (S.room?.code !== code || S.roomState?.phase !== 'lobby') throw new Error('Avatars can be changed in the lobby.');
+                    if (!context.send({type: 'avatar_update', avatar}, {quiet: true})) throw new Error('Reconnect to save your avatar.');
+                });
+            },
+            'competition-approve': el => competitionCommand('competition_review', {playerId: el.dataset.id, accepted: true}),
+            'competition-reject': el => competitionCommand('competition_review', {playerId: el.dataset.id, accepted: false}),
+            'competition-note': openReviewNote,
+            'competition-send-note': sendReviewNote,
+            'competition-reveal': el => competitionCommand('competition_reveal', {revealed: Number(el.dataset.revealed)}),
+            'competition-auto-reveal': el => competitionCommand('competition_auto_reveal', {enabled: el.dataset.enabled === 'true'}),
+            'competition-apply': () => competitionCommand('competition_apply'),
             'room-finish-final': () => send({ type: 'finish' }),
             'draw-round': () => send({ type: 'draw_round' }),
             'room-lock': () => send({ type: 'lock', locked: !S.roomState.locked }),
-            'room-finish': () => modal('End quiz?', `<p>Ends the quiz for all players.</p>`, '<button class="btn primary" data-action="confirm-finish">Show results</button>'),
+            'room-finish': () => modal(S.roomState?.study ? 'End practice?' : 'End quiz?',
+                S.roomState?.study ? '<p>Review the answers you have submitted.</p>' : '<p>Ends the quiz for all players.</p>',
+                '<button class="btn primary" data-action="confirm-finish">Show results</button>'),
             'confirm-finish': () => { send({ type: 'finish' }); closeModal(); },
             'kick-player': el => modal('Remove this player?', `<p>${esc(el.dataset.name)} will be removed from this quiz.</p>`, `<button class="btn danger" data-action="confirm-kick" data-id="${el.dataset.id}">Remove player</button>`),
             'confirm-kick': el => { send({ type: 'kick', playerId: el.dataset.id }); closeModal(); },
-            'leave-room': () => modal('Leave quiz?', `<p>${S.room.role === 'host' ? (S.roomState?.phase === 'finished' ? 'Saved results stay in My quizzes → Results.' : 'Players stay in the room. Rejoin or close it from My quizzes → Open rooms.') : 'You can rejoin from this browser while the room is still open.'}</p>`, '<button class="btn primary" data-action="confirm-leave">Leave quiz</button>'),
-            'confirm-leave': () => { const host = S.room?.role === 'host'; closeModal(); disconnectRoom(); S.room = null; S.roomState = null; S.fatalRoomError = null; location.hash = host ? '#dashboard' : '#'; },
-            'choose-answer': el => { const q = S.roomState?.question; if (!S.connected || !q || S.answerSent || S.answerPending || S.room.role === 'host')
+            'leave-room': () => {
+                const practice = S.roomState?.study && S.roomState.phase !== 'finished';
+                const message = practice ? 'Resume from Open rooms in My quizzes within 24 hours of opening this room.'
+                    : S.room.role === 'host' ? (S.roomState?.phase === 'finished' ? 'Saved results stay in My quizzes.' : 'Participants stay in the room. Rejoin or close it from Open rooms.')
+                    : 'You can rejoin from this browser while the room is still open.';
+                modal(practice?'Leave practice?':'Leave quiz?', `<p>${message}</p>`,
+                    `<button class="btn primary" data-action="confirm-leave">${practice?'Save and leave':'Leave quiz'}</button>`);
+            },
+            'confirm-leave': async () => {
+                const host = S.room?.role === 'host', state = S.roomState;
+                if(host && S.connected && state?.study && !['lobby','finished'].includes(state.phase) && state.autoplay?.status !== 'paused'){
+                    await context.actions['autoplay-pause']();
+                }
+                closeModal(); disconnectRoom(); S.room = null; S.roomState = null; S.fatalRoomError = null;
+                location.hash = host ? '#dashboard' : '#';
+            },
+            'choose-answer': el => { const q = S.roomState?.question; if (!S.connected || !q || S.answerSent || S.answerPending || S.roomState.autoplay?.clockPaused || (S.room.role === 'host' && !S.roomState.hostPlaying))
                 return; if (q.type === 'multi') {
                 if (!Array.isArray(S.selection))
                     S.selection = [];
@@ -67,7 +142,7 @@ export function createFeaturesLiveActions(context: AppContext) {
             'submit-pin': () => { if (S.pin)
                 sendAnswer(S.pin); },
             'player-order': el => moveReordered('player-order', S.order[Number(el.dataset.index)], Number(el.dataset.index) + Number(el.dataset.direction)),
-            'save-report': async () => { await backend(`/api/rooms/${S.room.code}/report`, { detailed: false }); toast('Results saved.'); },
-            'results-csv': () => download(`${slug(S.roomState.title)}-results.csv`, csvFor(S.roomState.leaderboard || [], S.roomState.roundResults || []), 'text/csv;charset=utf-8')
+            'save-report': async () => { await backend(`/api/rooms/${S.room.code}/report`, { detailed: !!S.roomState?.study }); toast('Results saved.'); },
+            'results-csv': () => download(`${slug(S.roomState.title)}-results.csv`, csvFor(S.roomState.leaderboard || [], S.roomState.roundResults || [], startingLives(S.roomState), S.roomState.competition?.winners ?? [], resultHasPoints(S.roomState)), 'text/csv;charset=utf-8')
         } };
 }

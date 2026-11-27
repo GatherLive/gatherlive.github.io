@@ -63,8 +63,11 @@ for(const name of await readdir(stateDir)){
     }else try{const conversation=JSON.parse(await readFile(join(stateDir,`${name.slice(0,6)}.conversation.json`),'utf8'));if(conversation.revision>=engine.conversation.revision)engine.conversation=new RoomConversation(engine.settings,conversation,{unlocked:engine.chatUnlocked});}catch(error){if(error.code!=='ENOENT')throw error;}
     const revision=saved.revision || 'legacy';
     try{for(const line of (await readFile(join(stateDir,`${name.slice(0,6)}.journal`),'utf8')).split('\n')){if(!line)continue;let entry;try{entry=JSON.parse(line);}catch{continue;}if(entry.revision===revision)engine.restorePlayer(entry.player);}}catch(error){if(error.code!=='ENOENT')throw error;}
+    const lastSavedAt=engine.updatedAt;
     for(const p of engine.players.values())engine.disconnect(p.id);
-    rooms.set(name.slice(0,6),makeRoom(engine,saved.meta,revision));
+    const room=makeRoom(engine,saved.meta,revision);
+    if(engine.pauseEmptyRoom(lastSavedAt))await persist(room);
+    rooms.set(name.slice(0,6),room);
   }catch{console.error('Could not restore one local room.');}
 }
 async function persist(room){
@@ -89,8 +92,8 @@ async function persistConversation(room){
   await rename(`${path}.tmp`,path);
 }
 function send(ws,message){if(ws.readyState===1){if(ws.bufferedAmount>1024*1024){ws.close(1013,'Connection too slow; reconnect.');return;}ws.send(typeof message==='string'?message:JSON.stringify(message));}}
-function sendState(room,ws,identity){send(ws,{type:'state',state:room.engine.snapshot(identity.role==='host',identity.playerId,{media:identity.mediaVersion||false,conversation:identity.conversationVersion===1})});}
-function sendConversation(room,ws,identity){if(identity.conversationVersion===1)send(ws,{type:'conversation',state:room.engine.conversation.snapshot(identity,room.engine.phase)});}
+function sendState(room,ws,identity){send(ws,{type:'state',state:room.engine.snapshot(identity.role==='host',room.engine.playerIdFor(identity),{media:identity.mediaVersion||false,conversation:identity.conversationVersion===1})});}
+function sendConversation(room,ws,identity){if(identity.conversationVersion===1)send(ws,{type:'conversation',state:room.engine.conversation.snapshot(identity,room.engine.chatPhase)});}
 function broadcastConversation(room,event){
   if(!event||room.closed||room.engine.phase==='finished')return;
   const packet=JSON.stringify(event);
@@ -102,8 +105,8 @@ function broadcastConversation(room,event){
   }
 }
 function updateTyping(room,ws,identity,message){
-  const {conversation,phase,players}=room.engine,now=Date.now(),wasViewing=identity.chatViewing;
-  broadcastConversation(room,conversation.updateTyping(identity,message,phase,players,now));
+  const {conversation,chatPhase,players}=room.engine,now=Date.now(),wasViewing=identity.chatViewing;
+  broadcastConversation(room,conversation.updateTyping(identity,message,chatPhase,players,now));
   if(wasViewing||!identity.chatViewing)return;
   for(const [other,id] of room.clients){
     if(other===ws||other.readyState!==1)continue;
@@ -158,7 +161,7 @@ const adapter={
    try{await serial(room,()=>persist(room));return code;}catch(error){await serial(room,()=>purge(code));throw error;}
   }throw new HttpError(503,'No room code available; retry.');
  },
- async list(ownerId){return [...rooms].filter(([,r])=>!r.closed&&r.engine.phase!=='finished'&&r.meta.ownerId===ownerId&&roomExpires(r)>Date.now()).map(([code,r])=>({code,roomId:r.meta.reportId,quizId:r.meta.quizId,title:r.meta.title,phase:r.engine.phase,participants:r.engine.participantCount,expires:r.meta.expiresAt})).sort((a,b)=>b.expires-a.expires);},
+ async list(ownerId){return [...rooms].filter(([,r])=>!r.closed&&r.engine.phase!=='finished'&&r.meta.ownerId===ownerId&&roomExpires(r)>Date.now()).map(([code,r])=>({code,roomId:r.meta.reportId,quizId:r.meta.quizId,title:r.meta.title,phase:r.engine.phase,participants:r.engine.participantCount,expires:r.meta.expiresAt,study:r.engine.isSelfStudy,mode:r.engine.mode,paused:r.engine.autoplay.status==='paused'})).sort((a,b)=>b.expires-a.expires);},
  async close(code,ownerId,roomId,{unfinishedOnly=false}={}){
   const room=rooms.get(code);if(!room||room.closed||roomExpires(room)<=Date.now())throw new HttpError(404,'Quiz not found or expired.');
   await serial(room,async()=>{
@@ -268,8 +271,15 @@ server.on('upgrade',async(req,socket,head)=>{
   const expireAuth=()=>{if(!identity.role && Date.now()-identity.acceptedAt>=10000){identity.superseded=true;ws.close(4008,'Join timed out.');return true;}return false;};
   identity.acceptedAt=Date.now();
   const applyAuth=async(auth)=>{
-    if(!active()||expireAuth())return;
-    if(auth.identity.role==='host'&&room.engine.phase!=='finished'&&room.engine.chatUnlocked!==auth.chatUnlocked){if(auth.chatUnlocked)room.engine.authorizeChat({enable:false});else room.engine.revokeChat();await persist(room);await persistConversation(room);}
+    if(!active()||expireAuth()){
+      const playerId=auth.identity.playerId;
+      if(!room.closed&&playerId&&![...room.clients].some(([client,id])=>client.readyState===1&&!id.superseded&&id.playerId===playerId)){
+        room.engine.cancelPendingJoin(playerId,auth.freshPlayer===true);
+        if(auth.freshPlayer)await persist(room);else await persistPlayer(room,playerId);
+      }
+      return;
+    }
+    if(typeof auth.chatUnlocked==='boolean'&&room.engine.phase!=='finished'&&room.engine.chatUnlocked!==auth.chatUnlocked){if(auth.chatUnlocked)room.engine.authorizeChat({enable:false});else room.engine.revokeChat();await persist(room);await persistConversation(room);}
     Object.assign(identity,auth.identity);clearTimeout(authTimer);
     if(identity.playerId){
       for(const [other,id] of room.clients)if(other!==ws&&id.playerId===identity.playerId){
@@ -277,8 +287,10 @@ server.on('upgrade',async(req,socket,head)=>{
         broadcastConversation(room,room.engine.conversation.stopTyping(id));
         delete id.playerId;other.close(4001,'Connected on another tab.');
       }
-      await persistPlayer(room,identity.playerId);
     }
+    room.engine.connectHostPlayer(identity);
+    const playerId=room.engine.playerIdFor(identity);
+    if(playerId)await persistPlayer(room,playerId);
     send(ws,auth.welcome);sendState(room,ws,identity);sendConversation(room,ws,identity);joinBroadcast(room);
   };
   ws.on('message',(bytes,isBinary)=>{
@@ -291,18 +303,21 @@ server.on('upgrade',async(req,socket,head)=>{
       message=decodeMessage(bytes.toString());
       if(!allowMessage(identity,Date.now(),message.type))throw new HttpError(429,'Please slow down.');
       if(identity.authenticating)throw new HttpError(409,'Sign-in is already in progress.');
-    }catch(error){if(message?.type!=='chat_typing')send(ws,{...safeError(error),...(CONVERSATION_COMMANDS.has(message?.type)||message?.type==='chat_subscribe'?{scope:'conversation',requestId:message.requestId}:{})});if(error.status===429&&repeatedFlood(identity))ws.close(1008,'Too many messages. Reconnect after a short pause.');return;}
+    }catch(error){if(message?.type!=='chat_typing')send(ws,{...safeError(error,message),...(CONVERSATION_COMMANDS.has(message?.type)||message?.type==='chat_subscribe'?{scope:'conversation',requestId:message.requestId}:{})});if(error.status===429&&repeatedFlood(identity))ws.close(1008,'Too many messages. Reconnect after a short pause.');return;}
     // Supabase verification must never hold the room's gameplay queue.
     if(!identity.role && message.type==='auth' && message.role==='host'){
       identity.authenticating=true;
-      (async()=>{try{const auth=await authorize(room.engine,room.meta,env,message);auth.chatUnlocked=await accountChatAccess(auth.identity.userId);await serial(room,()=>applyAuth(auth));}catch(error){send(ws,safeError(error));authFailure();}finally{identity.authenticating=false;}})();
+      (async()=>{try{const auth=await authorize(room.engine,room.meta,env,message);if(!room.engine.isSelfStudy)auth.chatUnlocked=await accountChatAccess(auth.identity.userId);await serial(room,()=>applyAuth(auth));}catch(error){send(ws,safeError(error));authFailure();}finally{identity.authenticating=false;}})();
       return;
     }
     serial(room,async()=>{
-      let persistedPhase=room.engine.phase;
+      let persistedPhase=room.engine.phase,persistedAutoplay=room.engine.autoplay.status;
+      let persistedRevealed=room.engine.competitionReview?.revealed;
       // addPlayer and command may cross a deadline after the first transport tick.
       const persistTransition=async()=>{
-        if(!room.closed&&persistedPhase!==room.engine.phase){await persist(room);persistedPhase=room.engine.phase;broadcast(room);}
+        if(room.closed||(persistedPhase===room.engine.phase&&persistedAutoplay===room.engine.autoplay.status&&persistedRevealed===room.engine.competitionReview?.revealed))return;
+        await persist(room);
+        persistedPhase=room.engine.phase;persistedAutoplay=room.engine.autoplay.status;persistedRevealed=room.engine.competitionReview?.revealed;broadcast(room);
       };
       try{
         if(!active()||expireAuth())return;
@@ -313,13 +328,13 @@ server.on('upgrade',async(req,socket,head)=>{
         room.engine.tick();
         await persistTransition();
         if(!identity.role){
-          const auth=await authorize(room.engine,room.meta,env,message,verificationPolicy(req));
+          const auth=await authorize(room.engine,room.meta,env,message,{...verificationPolicy(req),active:()=>active()&&!expireAuth()});
           await persistTransition();
           await applyAuth(auth);return;
         }
         if(message.type==='join_code_request'){
           if(identity.role!=='host'||identity.userId!==room.meta.ownerId)throw new HttpError(403,'Only the host can view the join verification code.');
-          if(room.engine.settings.joinVerification&&room.engine.phase!=='finished')send(ws,{type:'join_code',roomCode:room.engine.code,...await room.engine.joinChallenge()});
+          if(room.engine.settings.joinVerification&&room.engine.chatPhase!=='finished')send(ws,{type:'join_code',roomCode:room.engine.code,...await room.engine.joinChallenge()});
           return;
         }
         if(message.type==='ping'){send(ws,{type:'pong',...(typeof message.id==='string'&&message.id.length<=80?{id:message.id,serverReceivedAt}:{}),serverNow:Date.now()});return;}
@@ -332,7 +347,7 @@ server.on('upgrade',async(req,socket,head)=>{
         if(message.type==='chat_unlock'){
           if(identity.role!=='host'||identity.userId!==room.meta.ownerId)throw new HttpError(403,'Only the host can unlock chat.');
           if(typeof message.requestId!=='string'||!/^[a-zA-Z0-9-]{1,80}$/.test(message.requestId))throw new HttpError(400,'A message reference is required.');
-          if(['countdown','question','finished'].includes(room.engine.phase))throw new HttpError(409,'Unlock chat before starting or between questions.');
+          if(['countdown','question','finished'].includes(room.engine.chatPhase))throw new HttpError(409,'Unlock chat in a live quiz before starting or between questions.');
           if(!room.engine.chatUnlocked){
             const remote=await poolUnlockChat(env,room.meta.ownerId,message.code);
             const grant=remote?{ok:true}:await redeemLocal(await chatCodeRequest(env,message.code,room.meta.ownerId));
@@ -349,14 +364,23 @@ server.on('upgrade',async(req,socket,head)=>{
           if(event){await persistConversation(room);broadcastConversation(room,event);}
           send(ws,ack);
         }else if(message.type==='media_ready'){
-          if(result.changed&&identity.role==='host'&&room.engine.phase==='countdown')await persist(room);await persistTransition();if(result.changed&&identity.playerId)await persistPlayer(room,identity.playerId);send(ws,{type:result.type,token:result.token});if(result.changed)broadcastMediaProgress(room);
+          const playerId=room.engine.playerIdFor(identity);
+          if(result.changed&&identity.role==='host'&&!playerId&&room.engine.phase==='countdown')await persist(room);
+          await persistTransition();if(result.changed&&playerId)await persistPlayer(room,playerId);send(ws,{type:result.type,token:result.token});if(result.changed)broadcastMediaProgress(room);
         }else if(message.type==='answer'){
           await persistTransition();
-          await persistPlayer(room,identity.playerId);
+          await persistPlayer(room,room.engine.playerIdFor(identity));
           send(ws,{...result,type:'answer_ack',questionId:message.questionId,accepted:true});
           broadcastProgress(room);
+        }else if(message.type==='avatar_update'){
+          await persistTransition();
+          if(result.changed){
+            if(identity.role==='host')await persist(room);
+            else await persistPlayer(room,identity.playerId);
+            joinBroadcast(room);
+          }
         }else{
-          await persist(room);persistedPhase=room.engine.phase;
+          await persist(room);persistedPhase=room.engine.phase;persistedAutoplay=room.engine.autoplay.status;persistedRevealed=room.engine.competitionReview?.revealed;
           if(result?.type)send(ws,result);
           if(message.type==='kick')for(const [other,id]of room.clients)if(id.playerId===message.playerId){
             id.superseded=true;
@@ -368,7 +392,7 @@ server.on('upgrade',async(req,socket,head)=>{
       }catch(error){
         authFailure();
         await persistTransition();
-        if(message.type!=='chat_typing')send(ws,{...safeError(error),...(CONVERSATION_COMMANDS.has(message?.type)||message?.type==='chat_subscribe'?{scope:'conversation',requestId:message.requestId}:{})});
+        if(message.type!=='chat_typing')send(ws,{...safeError(error,message),...(CONVERSATION_COMMANDS.has(message?.type)||message?.type==='chat_subscribe'?{scope:'conversation',requestId:message.requestId}:{})});
       }
     }).catch(()=>{});
   });
@@ -376,9 +400,16 @@ server.on('upgrade',async(req,socket,head)=>{
     clearTimeout(authTimer);
     serial(room,async()=>{
       room.clients.delete(ws);
-      if(room.closed||identity.superseded)return;
+      if(room.closed||!identity.role||identity.superseded)return;
       broadcastConversation(room,room.engine.conversation.stopTyping(identity));
-      if(identity.playerId){room.engine.disconnect(identity.playerId);if(room.engine.tick()){await persist(room);broadcast(room);}else await persistPlayer(room,identity.playerId);joinBroadcast(room);}
+      const playerId=room.engine.playerIdFor(identity);
+      const remaining=[...room.clients].filter(([other,id])=>other.readyState===1&&id.role&&!id.superseded);
+      if(identity.role==='host'&&remaining.some(([,id])=>id.role==='host'))return;
+      if(playerId)room.engine.disconnect(playerId);
+      const paused=remaining.length===0&&room.engine.pauseEmptyRoom();
+      if(paused||room.engine.tick()){await persist(room);broadcast(room);}
+      else if(playerId)await persistPlayer(room,playerId);
+      if(playerId)joinBroadcast(room);
     }).catch(()=>{});
   });
   ws.on('error',()=>{});
@@ -387,7 +418,8 @@ server.on('upgrade',async(req,socket,head)=>{
 const ticking=setInterval(()=>{
  for(const [code,room]of rooms){serial(room,async()=>{
   if(roomExpires(room)<=Date.now()){await purge(code);return;}
-  if(room.engine.nextDeadline()&&room.engine.nextDeadline()<=Date.now()){room.engine.tick();await persist(room);broadcast(room);}
+  const deadline=room.engine.nextDeadline();
+  if(deadline!==null&&deadline<=Date.now()&&room.engine.tick()){await persist(room);broadcast(room);}
  }).catch(()=>{});}
  for(const [ip,entry]of rates)if(Date.now()-entry.start>60000)rates.delete(ip);
  for(const [ip,entry]of probes)if(Date.now()-entry.touched>120000)probes.delete(ip);

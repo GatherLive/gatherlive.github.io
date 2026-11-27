@@ -1,6 +1,7 @@
 import type {DataRecord} from '../../../shared/types.js';
 import {preparePinImages} from './pin-export.js';
 import {analyze,answerText,correctText,escapeHTML as esc,seconds,typeLabel,csv,reportBase} from './data.js';
+import {livesText} from './lives.js';
 const logoPromise=()=>fetch(new URL('../../assets/images/logo.svg',import.meta.url)).then(r=>{if(!r.ok)throw new Error('The report logo could not load.');return r.text();});
 let logo,pdfReady;
 const number=n=>n==null?'—':Number(n).toLocaleString(undefined,{maximumFractionDigits:1});
@@ -9,7 +10,7 @@ const dateValue=report=>new Date(report.finishedAt||report.createdAt||Date.now()
 const reportDate=report=>dateValue(report).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
 const participantLabel=(report,participant,options)=>options.names?participant.name:`Participant ${(report.players||[]).findIndex(p=>p.id===participant.id)+1}`;
 const cellText=value=>typeof value==='number'?number(value):String(value??'');
-const numericColumn=(header,index)=>index>0&&['Points','Accuracy','Correct','Incorrect','Missed','Answered','Average time','Time'].includes(header);
+const numericColumn=(header,index)=>index>0&&['Points','Lives remaining','Accuracy','Correct','Incorrect','Missed','Answered','Average time','Time'].includes(header);
 async function reportLogo(){if(!logo)logo=logoPromise().catch(error=>{logo=null;throw error;});return logo;}
 // Kept as a public helper for existing integrations. Reports use compact, labelled bars.
 export function ringSVG(value,label,dark=false){
@@ -20,11 +21,20 @@ function sectionsFor(report,options,participantId=''){
   const data=analyze(report,participantId),blocks=[],personal=!!participantId,learner=data.participantStats[0];
   if(personal&&!learner)throw new Error('This participant is not in the report.');
   const label=p=>participantLabel(report,p,options),graded=data.questionStats.filter(q=>q.graded),gradedMissed=graded.reduce((sum,q)=>sum+q.missed,0);
+  const lives=data.maxLives,showLives=options.scores&&lives>0,showPoints=options.scores&&(!lives||data.hasPoints);
+  const metricHeaders=[...(showLives?['Lives remaining']:[]),...(showPoints?['Points']:[])];
+  const metricCells=(p,points=true)=>[...(showLives?[livesText(p?.lives)]:[]),...(showPoints?[points?p?.score??0:'']:[])];
+  const roundMetric=r=>showLives?[livesText(r?.lives),...(showPoints&&r?.hasPoints?[`${number(r.score)} pts`]:[])].join(' · '):r?.score??0;
   if(options.summary){
     const metrics=personal?[
       ...(graded.length?[['Accuracy',percent(data.accuracy)]]:[]),['Answered',`${data.answered} / ${data.eligible}`],
-      ...(options.scores&&graded.length?[['Points',number(learner.score)]]:[]),...(options.timing?[['Average time',seconds(data.averageTime)]]:[])
-    ]:[['Participants',number(data.players.length)],['Questions',number(data.questions.length)],...(graded.length?[['Accuracy',percent(data.accuracy)]]:[]),...(options.scores&&graded.length?[['Average points',number(data.averageScore)]]:[]),...(options.timing?[['Average time',seconds(data.averageTime)]]:[])];
+      ...(showLives?[['Lives remaining',livesText(learner.lives)]]:[]),
+      ...(showPoints&&(lives||graded.length)?[['Points',number(learner.score)]]:[]),
+      ...(lives&&learner.winner?[['Outcome','Winner']]:[]),...(options.timing?[['Average time',seconds(data.averageTime)]]:[])
+    ]:[['Participants',number(data.players.length)],['Questions',number(data.questions.length)],...(graded.length?[['Accuracy',percent(data.accuracy)]]:[]),
+      ...(showLives?[['Survivors',number(data.participantStats.filter(p=>p.lives>0).length)]]:[]),
+      ...(showPoints&&(lives||graded.length)?[['Average points',number(data.averageScore)]]:[]),
+      ...(options.timing?[['Average time',seconds(data.averageTime)]]:[])];
     blocks.push({kind:'summary',metrics});
     if(options.charts){
       const items=graded.length?[{label:'Correct',count:data.correct,tone:'correct'},{label:'Incorrect',count:data.incorrect,tone:'incorrect'},{label:'No response',count:gradedMissed,tone:'missed'}]:[{label:'Submitted',count:data.answered,tone:'correct'},{label:'No response',count:data.missed,tone:'missed'}];
@@ -34,14 +44,14 @@ function sectionsFor(report,options,participantId=''){
   }
   if(options.participants){
     if(personal){if(!options.summary)blocks.push({kind:'totals',text:[`${learner.correct} correct · ${learner.incorrect} incorrect · ${learner.missed} unanswered`]});}
-    else blocks.push({title:'Participants',rows:[['Participant','Accuracy','Answered',...(options.scores?['Points']:[]),...(options.timing?['Average time']:[])],...data.participantStats.map(p=>[label(p.player),percent(p.accuracy),`${p.answered} / ${p.eligible}`,...(options.scores?[p.score]:[]),...(options.timing?[seconds(p.averageTime)]:[])])]});
+    else blocks.push({title:'Participants',rows:[['Participant','Accuracy','Answered',...metricHeaders,...(showLives?['Winner']:[]),...(options.timing?['Average time']:[])],...data.participantStats.map(p=>[label(p.player),percent(p.accuracy),`${p.answered} / ${p.eligible}`,...metricCells(p),...(showLives?[p.winner?'Yes':'']:[]),...(options.timing?[seconds(p.averageTime)]:[])])]});
   }
   if(options.rounds&&report.settings?.roundsEnabled){
-    if(personal)blocks.push({title:'Round results',rows:[['Round',options.scores?'Points':'Responses'],...learner.rounds.map(r=>[r.title,options.scores?r.score:learner.rows.filter(row=>row.round?.id===r.id&&row.answer).length])]});
+    if(personal)blocks.push({title:'Round results',rows:[['Round',...(options.scores?metricHeaders:['Responses'])],...learner.rounds.map(r=>[r.title,...(options.scores?metricCells(r,!lives||r.hasPoints):[learner.rows.filter(row=>row.round?.id===r.id&&row.answer).length])])]});
     else{
       // Keep printed columns readable even when a quiz has many rounds.
       const rounds=report.settings.rounds||[];
-      for(let start=0;start<rounds.length;start+=4){const group=rounds.slice(start,start+4);blocks.push({title:start?'Round results (continued)':'Round results',roundTable:true,rows:[['Participant',...group.map(r=>r.title)],...data.participantStats.map(p=>[label(p.player),...group.map(r=>options.scores?p.rounds.find(round=>round.id===r.id)?.score??0:p.rows.filter(row=>row.round?.id===r.id&&row.answer).length)])]});}
+      for(let start=0;start<rounds.length;start+=4){const group=rounds.slice(start,start+4);blocks.push({title:start?'Round results (continued)':'Round results',roundTable:true,rows:[['Participant',...group.map(r=>r.title)],...data.participantStats.map(p=>[label(p.player),...group.map(r=>options.scores?roundMetric(p.rounds.find(round=>round.id===r.id)):p.rows.filter(row=>row.round?.id===r.id&&row.answer).length)])]});}
     }
   }
   if(options.questions){
@@ -51,7 +61,15 @@ function sectionsFor(report,options,participantId=''){
       const meta=[typeLabel(q.type),...(stat.round?[stat.round.title]:[]),...(!stat.graded&&q.type!=='slide'?['Ungraded']:[])].join(' · ');
       const detail=personal?[]:q.type==='slide'?[]:[...(stat.graded?[`${stat.correct} / ${stat.eligible} correct (${percent(stat.accuracy)})`]:[]),`${stat.answered} / ${stat.eligible} answered`];
       if(options.timing&&q.type!=='slide')detail.push(personal?seconds(row?.answer?.elapsed):seconds(stat.averageTime)+' average');
-      if(personal&&options.responses&&q.type!=='slide'){const value=row?.eligible?answerText(q,row.answer?.answer):'Not present';fields.push({label:'Your answer',value});text.push('Your answer: '+value);}
+      if(personal&&options.responses&&q.type!=='slide'){
+        const value=row?.eligible?answerText(q,row.answer?.answer):'Not present';
+        fields.push({label:'Your answer',value});text.push('Your answer: '+value);
+        if(options.scores&&stat.hasPoints&&row?.eligible){
+          const points=number(row.answer?.awarded?row.answer.points:0);
+          fields.push({label:'Points',value:points});text.push('Points: '+points);
+        }
+      }
+      if(personal&&options.responses&&row?.answer?.reviewNote){fields.push({label:'Host note',value:row.answer.reviewNote});text.push(row.answer.reviewNote);}
       if(!personal&&options.responses&&stat.averageValue!=null){fields.push({label:'Average answer',value:number(stat.averageValue)});text.push('Average answer: '+number(stat.averageValue));}
       if(options.correct&&stat.graded&&(!personal||!options.responses||row?.status!=='Correct')){const value=correctText(q);fields.push({label:'Correct answer',value});text.push('Correct answer: '+value);}
       if(options.explanations&&q.explanation){fields.push({label:stat.graded?'Explanation':'Notes',value:q.explanation});text.push(q.explanation);}
@@ -61,7 +79,10 @@ function sectionsFor(report,options,participantId=''){
         block.bars=stat.distribution.slice(0,8);block.total=stat.answered;
         block.barNote=(q.type==='multi'?'Participants may select more than one answer. ':'')+(stat.distribution.length>8?`Showing the 8 most common of ${stat.distribution.length} responses.`:'');
       }
-      if(!personal&&options.responses&&q.type!=='slide')block.rows=[['Participant','Response','Result',...(options.scores?['Points']:[]),...(options.timing?['Time']:[])],...stat.rows.map(r=>[label(r.player),r.eligible?answerText(q,r.answer?.answer):'Not present',r.status,...(options.scores?[r.eligible&&r.answer?.awarded?r.answer.points:0]:[]),...(options.timing?[seconds(r.answer?.elapsed)]:[])])];
+      if(!personal&&options.responses&&q.type!=='slide'){
+        const showPoints=options.scores&&stat.hasPoints,hasNotes=stat.rows.some(r=>r.answer?.reviewNote);
+        block.rows=[['Participant','Response','Result',...(hasNotes?['Host note']:[]),...(showPoints?['Points']:[]),...(options.timing?['Time']:[])],...stat.rows.map(r=>[label(r.player),r.eligible?answerText(q,r.answer?.answer):'Not present',r.status,...(hasNotes?[r.answer?.reviewNote??'']:[]),...(showPoints?[r.eligible&&r.answer?.awarded?r.answer.points:0]:[]),...(options.timing?[seconds(r.answer?.elapsed)]:[])])];
+      }
       blocks.push(block);
     }
   }

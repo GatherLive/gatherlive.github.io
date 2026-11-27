@@ -1,5 +1,6 @@
 import type {AppContext} from '../../app/context.js';
 import { $, uid } from '../../core/dom.js';
+import {usesPoints} from './competition.js';
 export function createFeaturesEditorActions(context: AppContext) {
     const S = context.state;
     const blankQuiz = (...args) => context.blankQuiz(...args);
@@ -17,13 +18,36 @@ export function createFeaturesEditorActions(context: AppContext) {
     return { actions: {
             'new-quiz': () => { S.draft = blankQuiz(); S.questionIndex = 0; S.dirty = true; location.hash = `#edit/${S.draft.id}`; renderEditor(); setTimeout(() => { const details = $<HTMLDetailsElement>('.editor-quiz-details'); if (details)
                 details.open = true; $('#quiz-title')?.focus(); $('#quiz-title')?.select(); }, 20); },
-            'copy-ai-prompt': copyAIPrompt,
+            'copy-ai-prompt': () => copyAIPrompt(),
+            'copy-study-prompt': () => copyAIPrompt(true),
+            'show-study-questions': () => {
+                context.modal('Show questions?', '<p>This reveals the questions and answers for editing.</p>',
+                    '<button class="btn primary" data-action="confirm-study-questions">Show questions</button>');
+            },
+            'confirm-study-questions': () => {
+                S.studyQuestionsShownFor = S.draft?.id;
+                context.closeModal();
+                renderEditor();
+            },
+            'hide-study-questions': () => { S.studyQuestionsShownFor = null; renderEditor(); },
             'save-quiz': () => saveQuiz(),
             'export-quiz': exportQuiz,
             'select-question': el => { S.questionIndex = Number(el.dataset.index); S.currentRoundId = questionRound(S.draft.questions[S.questionIndex].id)?.id; renderEditor(); },
-            'add-question': () => { if (S.draft.questions.length >= 500)
-                throw new Error('A quiz can have up to 500 questions.'); const roundId = S.currentRoundId || questionRound(S.draft.questions[S.questionIndex]?.id)?.id || S.draft.settings.rounds?.[0]?.id, q = newQuestion(); S.draft.questions.push(q); if (roundId)
-                assignQuestion(q.id, roundId); S.questionIndex = S.draft.questions.length - 1; markDirty(); renderEditor(); },
+            'add-question': () => {
+                if (S.draft.questions.length >= 500) throw new Error('A quiz can have up to 500 questions.');
+                const previous = S.draft.questions[S.questionIndex];
+                const roundId = S.currentRoundId || questionRound(previous?.id)?.id || S.draft.settings.rounds?.[0]?.id;
+                const question = newQuestion();
+                if (S.reuseQuestionSettings && previous) {
+                    if (previous.timeLimit >= 5 && previous.timeLimit <= 300) question.timeLimit = previous.timeLimit;
+                    if (usesPoints(previous)) question.points = previous.points;
+                }
+                S.draft.questions.push(question);
+                if (roundId) assignQuestion(question.id, roundId);
+                S.questionIndex = S.draft.questions.length - 1;
+                markDirty();
+                renderEditor();
+            },
             'duplicate-question': () => { const q = structuredClone(S.draft.questions[S.questionIndex]), roundId = questionRound(q.id)?.id; q.id = uid(); S.draft.questions.splice(S.questionIndex + 1, 0, q); if (roundId)
                 assignQuestion(q.id, roundId); S.questionIndex++; markDirty(); renderEditor(); },
             'delete-question': () => { const [q] = S.draft.questions.splice(S.questionIndex, 1); for (const r of S.draft.settings.rounds || [])
@@ -39,7 +63,14 @@ export function createFeaturesEditorActions(context: AppContext) {
                 return; q.options.push({ id: uid(), text: '', image: '' }); if (q.type === 'order')
                 q.correct = q.options.map(o => o.id); markDirty(); renderEditor(); },
             'remove-option': el => { const q = S.draft.questions[S.questionIndex]; if (q.options.length <= 2)
-                throw new Error('Keep at least two answer choices.'); q.options = q.options.filter(o => o.id !== el.dataset.id); q.correct = q.correct.filter(id => id !== el.dataset.id); markDirty(); renderEditor(); },
+                throw new Error('Keep at least two answer choices.');
+                const optionId = el.dataset.id;
+                q.options = q.options.filter(o => o.id !== optionId);
+                q.correct = q.correct.filter(id => id !== optionId);
+                if (q.competition?.secretAnswer === optionId) delete q.competition.secretAnswer;
+                markDirty();
+                renderEditor();
+            },
             'move-option': el => moveReordered('editor-order', el.dataset.id, S.draft.questions[S.questionIndex].options.findIndex(o => o.id === el.dataset.id) + Number(el.dataset.direction))
         } };
 }

@@ -10,7 +10,17 @@ export class HttpError extends Error {
 }
 export const json = (body, status = 200) => Response.json(body, {status, headers: {'Cache-Control':'no-store'}});
 export function publicConfig(env) {
-  return {supabaseUrl: env.SUPABASE_URL, supabaseKey: env.SUPABASE_PUBLISHABLE_KEY};
+  const key = env.SUPABASE_PUBLISHABLE_KEY;
+  let publishable = typeof key === 'string' && /^sb_publishable_[A-Za-z0-9_-]+$/.test(key);
+  if (typeof key === 'string' && key.startsWith('eyJ')) {
+    try {
+      const payload = key.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      publishable = JSON.parse(atob(payload)).role === 'anon';
+    } catch { publishable = false; }
+  }
+  // A deployment mistake must never turn this anonymous endpoint into a secret leak.
+  if (!publishable) throw new HttpError(503, 'Public account settings are unavailable.');
+  return {supabaseUrl: env.SUPABASE_URL, supabaseKey: key};
 }
 export function originAllowed(request, env) {
   const origin = request.headers.get('Origin');
@@ -104,14 +114,17 @@ export async function handleApi(request, env, rooms) {
       const token = bearer(request), user = await authenticate(env,token);
       const body = await readJson(request,131072);
       if (!/^[0-9a-f-]{36}$/i.test(body.quizId || '')) throw new HttpError(400,'Choose a saved quiz.');
+      if(body.study!==undefined&&typeof body.study!=='boolean')throw new HttpError(400,'Choose live play or Solo play.');
       const quizzes = await supabase(env,`/rest/v1/giveaway_quizzes?id=eq.${body.quizId}&owner_id=eq.${user.id}&select=*`,token);
       if (!quizzes?.[0]) throw new HttpError(404,'Quiz not found.');
       const quiz=quizzes[0];
       const usage=await accountUsage(env,rooms,user,token),settings={...quiz.settings,...body.settings};
       settings.participantLimit=effectiveParticipants(settings,usage.limits.participants);
-      const code=await rooms.create({ownerId:user.id,quiz,settings,capacityLimit:usage.limits.participants});
-      const hostedAt=Date.now();try{if(rooms.recordHosted)await rooms.recordHosted(user.id,quiz.id,hostedAt);else await supabase(env,'/rest/v1/rpc/giveaway_record_hosted',token,{method:'POST',body:JSON.stringify({quiz:quiz.id})});}catch{/* Room creation remains successful if optional history cannot refresh. */}
-      response=json({code,hostedAt},201);
+      const study=body.study===true;
+      const code=await rooms.create({ownerId:user.id,quiz,settings,capacityLimit:usage.limits.participants,study});
+      const hostedAt=study?null:Date.now();
+      if(hostedAt!==null)try{if(rooms.recordHosted)await rooms.recordHosted(user.id,quiz.id,hostedAt);else await supabase(env,'/rest/v1/rpc/giveaway_record_hosted',token,{method:'POST',body:JSON.stringify({quiz:quiz.id})});}catch{/* Room creation remains successful if optional history cannot refresh. */}
+      response=json({code,hostedAt,study},201);
     } else if (pathname === '/api/rooms' && request.method === 'GET') {
       const user=await authenticate(env,bearer(request));
       response=json({rooms:await rooms.list(user.id),...(rooms.hosted?{hosted:await rooms.hosted(user.id)}:{})});

@@ -49,7 +49,8 @@ Tips:
 - **Sample quiz** loads an example quiz you can edit.
 - **Import quiz** loads a quiz from a JSON file.
 - **Export** downloads your quiz as a JSON file.
-- **Copy AI prompt** copies instructions for an AI tool. It asks up to three short questions when needed, then creates a Gather JSON file. The prompt includes all question types, rounds, current game settings and chat options. Import the downloaded file with **Import quiz**. Participant mention preferences are preserved.
+- **Host quiz prompt** asks an AI to create an editable Gather quiz. **Solo play prompt** asks about your topic or resources and creates a practice file. Import either file with **Import quiz**.
+- Solo play files open with questions hidden. Choose **Show questions** if you want to edit them. Both formats support live hosting and private practice.
 - Use the **duplicate** icon to copy a quiz.
 - Use the **trash** icon to delete a quiz.
 
@@ -70,6 +71,8 @@ For each question, set:
   - Poll: no correct answer.
   - Put in order: drag answers into the correct order.
 - **Explanation** – optional text shown after the answer is revealed.
+
+Turn on **Use these settings for new questions** to copy the current question’s time and points when you add a question. Use **Undo** and **Redo** in the editor toolbar to restore changes to questions, settings and rounds.
 
 Special question settings:
 
@@ -147,7 +150,24 @@ This is a short pause **before each question starts**, from `0` to `30` seconds.
 5. Assign each question to a round.
 6. Reorder rounds with the up/down buttons.
 
-Each round has its own winner and leaderboard. If players tie, the host can use **Break tie**.
+Each round has its own winner and leaderboard. In a standard quiz, the host can use **Break tie** when scores are tied.
+
+### Live game
+
+Choose **Live game** under **Game settings › Game type** to give everyone an avatar on the player stage. Edit your avatar from the top-right corner of the lobby. **Credits** opens the artwork sources, and **Back to room** returns to the lobby.
+
+Names and answers appear after submissions close. Choose **All at once**, **One at a time**, or **One at a time · automatic** under **Answer reveal**. Set an interval of 1–30 seconds in quiz or room settings, and use **Pause auto reveal** to resume manual turns. Both players lose a life when their matching answers are revealed.
+
+During play the header shows your remaining hearts. Tap the room code to copy it. The game finish screen and **Detailed results** show winners and remaining lives when lives are enabled.
+
+### Competition
+
+Open **Game settings › Competition** to set starting lives and choose when they reset. Players with zero lives watch until the next reset. When a challenge ends with multiple survivors, they share the win.
+
+- **Don’t Repeat Each Other** flags blank and repeated answers. In a Live game, open **Review answers** to approve an answer, post a note, or reject it as incorrect. Choose a quick reply or write your own. Visible notes appear with the answer and in Detailed results. Choose **Apply results** to finish the review.
+- **Don’t Say the Same Thing as Me** uses the secret text or choice saved with the question. The room locks that answer when hosted. Matching or blank answers cost one life.
+- In a standard quiz, **Answer reveal** controls named sharing for each question. Autoplay waits for the host when a reveal or review needs their input.
+- **Teams** supports different capacities, such as one versus twelve. Choose automatic assignment or let players pick. Team points use the average across each team’s starting roster. Team elimination supports individual or shared lives.
 
 ---
 
@@ -157,24 +177,24 @@ Apply for access or use a **one-time 12-digit invitation code**.
 
 ### Apply for access
 
-Open **Settings → Account settings → Room chat access** and click **Apply for chat access** beside **Unlock chat**. The button is also available inside your room. Your signed-in email identifies the request, so there is no extra application form.
+Open **Settings › Account settings › Room chat access** and click **Apply for chat access** beside **Unlock chat**. The button is also available inside your room. Your signed-in email identifies the request, so there is no extra application form.
 
 **Request pending** means it is waiting for review. Approval enables chat for your account and quizzes. If declined, the page shows when you can apply again; the waiting period is seven days. Repeating an application does not create duplicate requests.
 
 ### Add the code to your account
 
-1. Open **Settings → Account settings**.
+1. Open **Settings › Account settings**.
 2. Go to **Room chat**.
 3. Enter the **12-digit invitation code**.
 4. Click **Unlock chat**.
 
-Inside a room, open **Settings → Chat settings → Unlock chat**.
+Inside a room, open **Settings › Chat settings › Unlock chat**.
 One code unlocks chat for your account and all your future quizzes.
 A code can only be used once.
 
 ### Choose when chat opens
 
-In the quiz editor, open **Game settings → Room chat** and choose:
+In the quiz editor, open **Game settings › Room chat** and choose:
 
 - **Off**
 - **Lobby only**
@@ -204,7 +224,7 @@ The list supports tapping a name, arrow keys and Enter or Tab. Press Escape to c
 5. Wait for participants to join.
 6. Click **Start quiz**.
 
-You can also click **Host** inside the editor. It saves the quiz first.
+You can also choose **Host** inside the editor. It saves the quiz first.
 
 ### Lobby Controls
 
@@ -244,7 +264,7 @@ For a live countdown, write **Quiz starting in {20} minutes**. The number in bra
 
 Host can:
 
-- **Save results** – keeps the leaderboard and round summary in **My quizzes → Results**.
+- **Save results** – keeps the leaderboard and round summary in **My quizzes › Results**.
 - **Detailed results** – opens the host-only question, participant and round analysis.
 - **CSV** – downloads the results.
 - **Random draw** – pick winners from all players, players with a correct answer, or top scorers.
@@ -258,7 +278,7 @@ between **Questions** and **Participants**. Each question card groups the questi
 correct answer, **Answer breakdown** and **Explanation**, with participant responses
 below. Search for a participant to open their report. **Rounds** shows round points.
 
-**Save report** in Detailed results retains the full report in **My quizzes → Results**.
+**Save report** in Detailed results retains the full report in **My quizzes › Results**.
 The completion screen’s **Save results** retains only the summary unless you
 have already saved the details. Unsaved details expire after **15 minutes**, even
 when you save the summary.
@@ -268,13 +288,13 @@ HTML or CSV, and download. **Customize** contains optional sections and details.
 PDF and HTML use Gather’s dark appearance. Participant reports contain only that
 participant’s results; ZIP downloads keep each report separate.
 
-To delete a saved report, open **My quizzes → Results**, use its delete button,
+To delete a saved report, open **My quizzes › Results**, use its delete button,
 and confirm **Delete results**.
 
 Unsaved results are deleted **15 minutes** after the quiz ends.
 Ended rooms clear after **15 minutes**. Abandoned rooms expire after **24 hours**.
 
-From **My quizzes → Open rooms**, the host can rejoin, close one room, or close all rooms.
+From **My quizzes › Open rooms**, the host can rejoin, close one room, or close all rooms.
 
 ---
 
@@ -299,11 +319,21 @@ After the quiz, participants see the leaderboard if the host allows it.
 
 ## Live room tools
 
-Open **Settings → Chat settings** to change chat permissions, or use **Announce** to send a room announcement. Announcement countdowns use `{20}` for 1–60 minutes and do not start the quiz. Start and advance questions with the usual host controls.
+Open **Room Settings › Autoplay** to start now, after a delay, or at a time within 24 hours of opening the room. The start countdown appears to the left of Chat. Under **Timing**, set the wait between questions and rounds and the question countdown. The default wait between questions is five seconds. **Finish when everyone answers** reveals the answer during manual play or Autoplay. Round results stay up for at least five seconds and are available at the end.
+
+Autoplay pauses when everyone disconnects or after five minutes without an answer once the quiz starts. Reopen the room and choose **Resume Autoplay** or take over with manual controls.
+
+Pause or resume Autoplay in room Settings. **Use manual controls** turns automatic progression off. **Remember timing on this device** reuses your choices in future rooms.
+
+Open a room with **Host**, then choose **Settings › Play mode** before starting. **Host only** runs the quiz for others. **Group play** lets you answer too. Share the room code to invite friends.
+
+Choose **Solo play** for private practice. **Save and leave** pauses your timer and keeps your answers. Reopen the practice from **My quizzes › Open rooms** within 24 hours of opening the room and select **Resume practice**. Use **Review answers** when you finish.
+
+Open **Settings › Chat settings** to change chat permissions, or use **Announce** to send a room announcement. Announcement countdowns use `{20}` for 1–60 minutes and do not start the quiz. Start and advance questions with the usual host controls.
 
 ## Find and organise quizzes
 
-**Search** opens the search field when needed. **Filter** opens a compact menu for tags, hosting status and sorting by newest, oldest, recent edits, recent hosting or name. Close it with **×**, Escape or a click outside. **Clear filters** restores the default view while keeping your search. **Sample quiz**, **Import quiz** and **Copy AI prompt** are in the page footer. Hosted quizzes have a subtle green treatment and can be hosted again. Available saved results and room history identify earlier sessions; old sessions without retained history cannot be recovered.
+**Search** opens the search field when needed. **Filter** opens a compact menu for tags, hosting status and sorting by newest, oldest, recent edits, recent hosting or name. Close it with **×**, Escape or a click outside. **Clear filters** restores the default view while keeping your search. **Sample quiz**, **Import quiz**, **Host quiz prompt** and **Solo play prompt** are in the page footer. Hosted quizzes have a subtle green treatment and can be hosted again. Available saved results and room history identify earlier sessions; old sessions without retained history cannot be recovered.
 
 ## Site News and Settings
 
@@ -323,7 +353,7 @@ Existing content is kept if an account is above a new default limit; remove data
 ## Quick Start
 
 1. Sign in.
-2. **My quizzes → New quiz**.
+2. **My quizzes › New quiz**.
 3. Add title and questions.
 4. Set countdown, scoring and chat.
 5. **Save**.
@@ -332,15 +362,15 @@ Existing content is kept if an account is above a new default limit; remove data
 8. **Start quiz**.
 9. Reveal answers, use **Announce**, then finish and save results.
 
-To support Gather, open **Settings → Buy me a coffee**. This opens the Gather support page in a new tab.
+To support Gather, open **Settings › Buy me a coffee**. This opens the Gather support page in a new tab.
 
 ## Support Gather
 
-Settings includes **Buy me a coffee** below About Gather. You can also [support Gather here](https://buymeacoffee.com/gatherlive). Support is optional.
+Open **Settings › How to use Gather** for the quiz guide, then use **Share Gather** to send a short invitation with the site link. **Buy me a coffee** opens the [support page](https://buymeacoffee.com/gatherlive).
 
 ## Join verification
 
-In the waiting room, open **Settings** and enable **Join verification**. The switch confirms when saved and shows a verification code. Participants enter the room code and this second code from your screen. That code changes every 30 seconds. It is off by default and never requires a participant account. Returning participants can reconnect with their existing session.
+In the waiting room, open **Settings › Two-step verification** and enable **Require a second code**. Open **Verification code** from the lobby when you want to show it. Participants enter the room code and this second code from your screen. The second code changes every 30 seconds. Verification is off by default, and returning participants can reconnect with their existing session.
 
 Room-code guessing, failed verification and rapid messages are rate limited. On the hosted site, current questions travel over secure connections; answers and future question content remain on the server until needed. Copy and image-drag controls discourage casual copying during a question. Anything visible on a screen can still be captured.
 

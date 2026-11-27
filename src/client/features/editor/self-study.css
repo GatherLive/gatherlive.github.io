@@ -1,0 +1,13 @@
+.editor-layout.study-questions-hidden { grid-template-columns: minmax(0, 1fr); }
+.study-question-visibility {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 18px;
+}
+.study-question-visibility strong { font-size: 14px; font-weight: 550; }
+.study-question-visibility p { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.study-question-visibility > button { min-height: 44px; }
+.study-hide-questions { align-self: flex-start; }

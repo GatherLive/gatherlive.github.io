@@ -11,7 +11,10 @@ export function createFeaturesJoinForms(context: AppContext) {
                     if (!/^\d{6}$/.test(code) || !name)
                         throw new Error('Enter a six digit code and your name.');
                     const previous = savedPlayer(code, name);
-                    S.room = { ...previous, code, role: 'player', name, verificationCode: $('#join-verification-code')?.value.trim() };
+                    const teamPrompt = S.joinTeamPrompt?.code === code ? S.joinTeamPrompt : null;
+                    const team = teamPrompt ? $<HTMLSelectElement>('#join-team')?.value : undefined;
+                    const verificationCode = $<HTMLInputElement>('#join-verification-code')?.value.trim() ?? teamPrompt?.verificationCode;
+                    S.room = { ...previous, code, role: 'player', name, verificationCode, team };
                     try { localStorage.setItem('gather.name', name); } catch { }
                     S.fatalRoomError = null;
                     location.hash = `#room/${code}`;

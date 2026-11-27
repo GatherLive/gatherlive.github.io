@@ -3,6 +3,7 @@ import { uid, safeImage } from '../../core/dom.js';
 import { TYPES } from '../../core/quiz-types.js';
 import {validPinRegion} from '../../core/pin-regions.js';
 import { CHAT_OPTIONS } from '../chat/room-chat.js';
+import {isCompetitionQuestion, validateCompetitionSettings, validateQuestionCompetition} from './competition.js';
 export function createFeaturesEditorModel(context: AppContext) {
     const S = context.state;
     const activeUser = (...args) => context.activeUser(...args);
@@ -50,6 +51,7 @@ export function createFeaturesEditorModel(context: AppContext) {
             throw new Error('Add at least one question.');
         if (d.questions.length > 500)
             throw new Error('A quiz can contain up to 500 questions.');
+        validateCompetitionSettings(d.settings.competition);
         for (let i = 0; i < d.questions.length; i++) {
             const q = d.questions[i], prefix = `Question ${i + 1}: `;
             if (!q.prompt.trim() || q.prompt.length > 1000)
@@ -60,6 +62,8 @@ export function createFeaturesEditorModel(context: AppContext) {
                 throw new Error(prefix + 'choose a time from 5 to 300 seconds.');
             if (q.image && !safeImage(q.image))
                 throw new Error(prefix + 'use an HTTPS image URL.');
+            validateQuestionCompetition(q, prefix);
+            const special = isCompetitionQuestion(q);
             if (['single', 'multi', 'true_false', 'poll', 'order'].includes(q.type)) {
                 if (q.options.length < 2 || q.options.length > 8)
                     throw new Error(prefix + 'add between 2 and 8 answers.');
@@ -67,21 +71,21 @@ export function createFeaturesEditorModel(context: AppContext) {
                     throw new Error(prefix + 'fill in every answer or add an image.');
                 if (q.options.some(o => o.image && !safeImage(o.image)))
                     throw new Error(prefix + 'answer images need HTTPS URLs.');
-                if (['single', 'true_false'].includes(q.type) && q.correct.length !== 1)
+                if (!special && ['single', 'true_false'].includes(q.type) && q.correct.length !== 1)
                     throw new Error(prefix + 'select exactly one correct answer.');
                 if (q.type === 'multi' && !q.correct.length)
                     throw new Error(prefix + 'select the correct answers.');
                 if (q.type === 'order')
                     q.correct = q.options.map(o => o.id);
             }
-            if (q.type === 'short_answer' && !q.acceptedAnswers.filter(x => x.trim()).length)
+            if (!special && q.type === 'short_answer' && !q.acceptedAnswers.filter(x => x.trim()).length)
                 throw new Error(prefix + 'add at least one accepted answer.');
             if (q.type === 'slider' && (!Number.isFinite(q.min) || !Number.isFinite(q.max) || q.min >= q.max || q.target < q.min || q.target > q.max || q.tolerance < 0))
                 throw new Error(prefix + 'check the slider range and correct number.');
             if (q.type === 'pin' && q.answerRegion != null && !validPinRegion(q.answerRegion)) throw new Error(prefix + 'mark a valid correct area.');
             if (q.type === 'pin' && (!safeImage(q.image) || q.answerRegion==null&&(!Number.isFinite(q.target?.x) || !Number.isFinite(q.target?.y) || q.target.x < 0 || q.target.x > 1 || q.target.y < 0 || q.target.y > 1 || !Number.isFinite(q.tolerance) || q.tolerance < .001 || q.tolerance > 1.5)))
                 throw new Error(prefix + 'add an image and set a valid pin location.');
-            if (['poll', 'word_cloud', 'open_ended', 'slide'].includes(q.type))
+            if (special || ['poll', 'word_cloud', 'open_ended', 'slide'].includes(q.type))
                 q.points = 0;
         }
         if (!Number.isInteger(d.settings.questionDelay) || d.settings.questionDelay < 0 || d.settings.questionDelay > 30)

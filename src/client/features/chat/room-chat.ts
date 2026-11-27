@@ -3,11 +3,16 @@ import {announcementText,tickAnnouncement} from './countdown.js';
 import {mentionedViewer,mentionText} from './mentions.js';
 import {MentionComposer} from './mention-composer.js';
 import {ChatTyping} from './typing.js';
+import {avatarMarkup, hydrateAvatars} from '../avatars/render.js';
+import {autoplayTimerMarkup, tickAutoplayTimer} from '../live/autoplay.js';
+import {competitionReviewPending} from '../live/competition.js';
+import {backToRoomSettings} from '../live/room-settings.js';
 export const CHAT_OPTIONS=[['off','Off'],['lobby','Lobby only'],['breaks','Between questions & rounds'],['rounds','Lobby & round breaks']];
 const EMOJI=['👍','❤️','😂','🎉','👏','😮'];
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export class RoomChat {
   declare messages: ChatMessage[];
+  renderedMessages = '';
   declare announcement: Announcement | null;
   declare revision: number;
   declare meta: ChatMetadata | null;
@@ -108,7 +113,7 @@ export class RoomChat {
     if(['countdown','question','finished'].includes(room?.phase)&&document.querySelector<HTMLFormElement>('#announcement-form'))this.closeModal();
     if(room?.phase==='finished'){
       this.messages=[];this.announcement=null;this.draft='';this.replyTo=null;this.emojiFor=null;this.menuFor=null;this.unread=0;this.mentioned.clear();this.mentions.reset();this.mentions.invalidate();this.hadConversation=false;this.reconnectPending=false;
-      if(document.querySelector<HTMLFormElement>('#chat-settings-form,#chat-unlock-form'))this.closeModal();
+      if(document.querySelector<HTMLFormElement>('#chat-settings-form,#chat-unlock-form,#autoplay-form'))this.closeModal();
     }
     if(this.meta?.unlocked&&document.querySelector<HTMLFormElement>('#chat-unlock-form')){this.closeModal();this.settings();}
     if(!this.meta?.chatReplies)this.replyTo=null;if(!this.meta?.chatReactions)this.emojiFor=null;
@@ -116,7 +121,7 @@ export class RoomChat {
     if(changed)this.mentions.invalidate();
     if(!this.mentions.allowed())this.mentions.close();
   }
-  available() {return !this.state().fatalRoomError&&!!this.meta?.open&&!['question','countdown','finished'].includes(this.state().roomState?.phase);}
+  available() {return !this.state().fatalRoomError&&!this.state().roomState?.study&&!!this.meta?.open&&!['question','countdown','finished'].includes(this.state().roomState?.phase);}
   actorId() {return this.state().room?.role==='host'?'host':this.state().room?.playerId;}
   isHost() {return this.state().room?.role==='host';}
   request(type,body={}): Promise<DataRecord> {
@@ -167,9 +172,19 @@ export class RoomChat {
     if(!this.available())this.close();this.refresh();return true;
   }
   tools() {
-    const phase=this.state().roomState?.phase;if(!this.meta||phase==='finished'||this.state().fatalRoomError)return '';
-    const host=this.isHost(),available=this.available(),focus=['countdown','question'].includes(phase);
-    return `${host?`<div class="room-host-tools"><button class="quiet-button" data-action="room-settings">${this.icon('settings',16)} Settings</button><button class="quiet-button" data-action="announcement-compose" aria-label="Announcement" ${focus?'disabled':''}>${this.icon('announce',16)} Announce</button></div>`:''}${available?`<button class="quiet-button chat-launch" data-action="${this.hidden?'chat-show':'chat-toggle'}">${this.icon('chat',16)} ${this.hidden?'Show chat':'Chat'}${!this.hidden&&this.mentioned.size?`<span class="chat-mention-badge" aria-hidden="true">${this.mentioned.size}</span><span class="sr-only">${this.mentioned.size} unread mention${this.mentioned.size===1?'':'s'}</span>`:!this.hidden&&this.unread?`<span class="chat-unread">${this.unread}</span>`:''}</button>`:''}`;
+    const state=this.state(),room=state.roomState,phase=room?.phase;
+    if(!this.meta||phase==='finished'||state.fatalRoomError)return '';
+    const host=this.isHost(),focus=['countdown','question'].includes(phase)||competitionReviewPending(room),disabled=state.connected?'':'disabled';
+    const canPause=room?.autoplay?.status==='running'||(room?.autoplay?.status==='off'&&focus);
+    const studyControl=canPause?`<button class="quiet-button" data-action="autoplay-pause" ${disabled}>Pause</button>`:'';
+    const hostTools=host?`<div class="room-host-tools">
+      <button class="quiet-button" data-action="room-settings">${this.icon('settings',16)} Settings</button>
+      ${room?.study?studyControl:`<button class="quiet-button" data-action="announcement-compose" aria-label="Announcement" ${focus?'disabled':''}>${this.icon('announce',16)} Announce</button>`}
+    </div>`:'';
+    const badge=!this.hidden&&this.mentioned.size?`<span class="chat-mention-badge" aria-hidden="true">${this.mentioned.size}</span><span class="sr-only">${this.mentioned.size} unread mention${this.mentioned.size===1?'':'s'}</span>`:!this.hidden&&this.unread?`<span class="chat-unread">${this.unread}</span>`:'';
+    const chat=this.available()?`<button class="quiet-button chat-launch" data-action="${this.hidden?'chat-show':'chat-toggle'}">${this.icon('chat',16)} ${this.hidden?'Show chat':'Chat'}${badge}</button>`:'';
+    const timer=autoplayTimerMarkup(room,state.clock?.now()??Date.now());
+    return hostTools+(timer?`<div class="room-chat-tools">${timer}${chat}</div>`:chat);
   }
   applicationButton(className='quiet-button') {
     const state=this.state(),value=state.chatApplicationOwner===state.session?.user?.id?state.chatApplication:null;
@@ -180,12 +195,16 @@ export class RoomChat {
     const item=this.announcement;if(!item||this.dismissed===item.id||['countdown','question','finished'].includes(this.state().roomState?.phase))return '';
     return `<aside class="room-announcement" role="status"><span class="announcement-icon">${this.icon('announce',18)}</span><div><span class="announcement-label">Host</span><p>${announcementText(item,this.state().clock?.now()??Date.now())}</p></div><button class="icon-btn" data-action="announcement-dismiss" aria-label="Dismiss announcement">${this.icon('close',15)}</button></aside>`;
   }
-  tick(now) {tickAnnouncement(this.announcement,now);}
+  tick(now) {
+    tickAnnouncement(this.announcement,now);
+    const state=this.state();
+    tickAutoplayTimer(now,state.connected?state.roomState:null);
+  }
   messageView(item,index) {
     const parent=item.replyTo&&this.messages.find(value=>value.id===item.replyTo),own=item.senderId===this.actorId(),ping=mentionedViewer(item,this.actorId());
-    const previous=this.messages[index-1],grouped=previous?.senderId===item.senderId&&item.at-previous.at<300000;
+    const previous=this.messages[index-1],grouped=previous?.senderId===item.senderId&&item.at-previous.at<300000&&JSON.stringify(previous.senderAvatar)===JSON.stringify(item.senderAvatar);
     const actions=!item.deleted&&(this.meta?.chatReplies||this.meta?.chatReactions||this.isHost());
-    return `<article class="chat-message ${own?'own':''} ${grouped?'grouped':''} ${ping?'is-mentioned':''}" data-message-id="${esc(item.id)}">${!own&&!grouped?`<div class="chat-message-meta"><strong>${esc(item.senderName)}</strong>${item.role==='host'?`<span class="chat-host-label" aria-label="Verified host">${this.icon('check',12)}</span>`:''}</div>`:''}${actions?`<button class="chat-more" data-action="chat-menu" data-id="${esc(item.id)}" aria-label="Message actions" aria-expanded="${this.menuFor===item.id}">${this.icon('more',17)}</button>`:''}${item.replyTo?`<blockquote class="chat-quote">${parent&&!parent.deleted?`<strong>${esc(parent.senderName)}</strong><span>${esc(parent.text.slice(0,100))}</span>`:'Earlier message'}</blockquote>`:''}<p class="chat-text ${item.deleted?'muted':''}" dir="auto">${ping?'<span class="sr-only">You were mentioned. </span>':''}${item.deleted?'Message removed':mentionText(item,this.actorId())}</p><div class="chat-message-footer"><time datetime="${new Date(item.at).toISOString()}">${new Date(item.at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</time>${own?`<span aria-label="Sent">${this.icon('check',12)}</span>`:''}</div>${!item.deleted?`${Object.keys(item.reactions||{}).length?`<div class="chat-reactions">${Object.entries(item.reactions).map(([emoji,count])=>`<button data-action="chat-react" data-id="${esc(item.id)}" data-emoji="${esc(emoji)}" aria-pressed="${item.myReaction===emoji}" ${this.meta?.chatReactions?'':'disabled'}>${esc(emoji)} <span>${count}</span></button>`).join('')}</div>`:''}${this.menuFor===item.id?`<div class="chat-message-actions" role="group" aria-label="Message actions">${this.meta?.chatReplies?`<button type="button" class="chat-reply-button" data-action="chat-reply" data-id="${esc(item.id)}" aria-label="Reply to ${esc(item.senderName)}">${this.icon('reply',18)}<span>Reply</span></button>`:''}${this.meta?.chatReactions?`<button data-action="chat-emojis" data-id="${esc(item.id)}">${this.icon('smile',15)} React</button>`:''}${this.isHost()?`<button data-action="chat-delete" data-id="${esc(item.id)}">${this.icon('trash',14)} Remove</button>`:''}</div>`:''}${this.emojiFor===item.id?`<div class="chat-emoji-picker" role="group" aria-label="Choose reaction">${EMOJI.map(emoji=>`<button data-action="chat-react" data-id="${esc(item.id)}" data-emoji="${emoji}" aria-label="React ${emoji}">${emoji}</button>`).join('')}</div>`:''}`:''}</article>`;
+    return `<article class="chat-message ${own?'own':''} ${grouped?'grouped':''} ${ping?'is-mentioned':''}" data-message-id="${esc(item.id)}">${!grouped?`<div class="chat-message-meta">${avatarMarkup(item.senderAvatar,item.senderName,'chat')}<strong>${esc(item.senderName)}</strong>${item.role==='host'?`<span class="chat-host-label" aria-label="Verified host">${this.icon('check',12)}</span>`:''}</div>`:''}${actions?`<button class="chat-more" data-action="chat-menu" data-id="${esc(item.id)}" aria-label="Message actions" aria-expanded="${this.menuFor===item.id}">${this.icon('more',17)}</button>`:''}${item.replyTo?`<blockquote class="chat-quote">${parent&&!parent.deleted?`<strong>${esc(parent.senderName)}</strong><span>${esc(parent.text.slice(0,100))}</span>`:'Earlier message'}</blockquote>`:''}<p class="chat-text ${item.deleted?'muted':''}" dir="auto">${ping?'<span class="sr-only">You were mentioned. </span>':''}${item.deleted?'Message removed':mentionText(item,this.actorId())}</p><div class="chat-message-footer"><time datetime="${new Date(item.at).toISOString()}">${new Date(item.at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</time>${own?`<span aria-label="Sent">${this.icon('check',12)}</span>`:''}</div>${!item.deleted?`${Object.keys(item.reactions||{}).length?`<div class="chat-reactions">${Object.entries(item.reactions).map(([emoji,count])=>`<button data-action="chat-react" data-id="${esc(item.id)}" data-emoji="${esc(emoji)}" aria-pressed="${item.myReaction===emoji}" ${this.meta?.chatReactions?'':'disabled'}>${esc(emoji)} <span>${count}</span></button>`).join('')}</div>`:''}${this.menuFor===item.id?`<div class="chat-message-actions" role="group" aria-label="Message actions">${this.meta?.chatReplies?`<button type="button" class="chat-reply-button" data-action="chat-reply" data-id="${esc(item.id)}" aria-label="Reply to ${esc(item.senderName)}">${this.icon('reply',18)}<span>Reply</span></button>`:''}${this.meta?.chatReactions?`<button data-action="chat-emojis" data-id="${esc(item.id)}">${this.icon('smile',15)} React</button>`:''}${this.isHost()?`<button data-action="chat-delete" data-id="${esc(item.id)}">${this.icon('trash',14)} Remove</button>`:''}</div>`:''}${this.emojiFor===item.id?`<div class="chat-emoji-picker" role="group" aria-label="Choose reaction">${EMOJI.map(emoji=>`<button data-action="chat-react" data-id="${esc(item.id)}" data-emoji="${emoji}" aria-label="React ${emoji}">${emoji}</button>`).join('')}</div>`:''}`:''}</article>`;
   }
   panel() {
     if(!this.open||this.hidden||!this.available())return '';
@@ -199,7 +218,8 @@ export class RoomChat {
     this.syncConnection();
     if(this.open&&!this.available())this.close();
     this.typing.sync();
-    const tools=document.querySelector<HTMLElement>('#room-tools');if(tools){tools.innerHTML=this.tools();tools.hidden=!tools.innerHTML;}
+    const tools=document.querySelector<HTMLElement>('#room-tools');
+    if(tools){const markup=this.tools();if(tools.innerHTML!==markup)tools.innerHTML=markup;tools.hidden=!markup;}
     const announcement=document.querySelector<HTMLElement>('#room-announcement');if(announcement){const markup=this.announcementView();if(announcement.innerHTML!==markup)announcement.innerHTML=markup;}
     const root=document.querySelector<HTMLElement>('#room-chat-root');if(!root)return;
     const list=document.querySelector<HTMLElement>('.chat-messages'),scroll=list?.scrollTop??0,atBottom=!list||list.scrollHeight-list.clientHeight-list.scrollTop<70;
@@ -207,14 +227,22 @@ export class RoomChat {
     if(!markup){root.replaceChildren();this.mentions.close();return;}
     // Keep the focused textarea mounted: replacing it dismisses iOS keyboards
     // and interrupts composition, even when focus is immediately restored.
-    if(!root.firstElementChild)root.innerHTML=markup;
+    if(!root.firstElementChild){
+      root.innerHTML=markup;
+      this.renderedMessages=root.querySelector('.chat-messages')?.innerHTML??'';
+    }
     else {
       const template=document.createElement('template');template.innerHTML=markup;
       for(const selector of ['.chat-header-copy p','.chat-messages','.chat-reply-slot']){
         const current=root.querySelector(selector),next=template.content.querySelector(selector);
-        if(current&&next&&current.innerHTML!==next.innerHTML)current.innerHTML=next.innerHTML;
+        const previous=selector==='.chat-messages'?this.renderedMessages:current?.innerHTML;
+        if(current&&next&&previous!==next.innerHTML){
+          current.innerHTML=next.innerHTML;
+          if(selector==='.chat-messages')this.renderedMessages=next.innerHTML;
+        }
       }
     }
+    hydrateAvatars(root);
     this.viewport();this.mentions.render();this.typing.render();
     const next=document.querySelector<HTMLElement>('.chat-messages');if(next)next.scrollTop=atBottom?next.scrollHeight:scroll;
     const compose=document.querySelector<HTMLTextAreaElement>('#chat-input');if(compose){if(compose.value!==this.draft)compose.value=this.draft;compose.style.height='auto';compose.style.height=Math.min(140,compose.scrollHeight)+'px';}
@@ -229,10 +257,15 @@ export class RoomChat {
     if(this.state().roomState?.phase==='finished')return;
     const config: Partial<ChatMetadata>=this.meta??{};
     if(!config.unlocked){
-      if(['countdown','question'].includes(this.state().roomState?.phase)){this.modal('Chat is locked','<p>Enter your invitation code before the quiz or between questions.</p>');return;}
-      this.modal('Unlock chat',`<form id="chat-unlock-form"><p>One invitation code enables chat for your account and future quizzes.</p><div class="field"><label for="chat-unlock-code">12-digit code</label><input id="chat-unlock-code" type="password" inputmode="numeric" pattern="[0-9]{12}" minlength="12" maxlength="12" autocomplete="off" required placeholder="••••••••••••"></div><div class="chat-access-actions"><button class="btn primary" type="submit">${this.icon('lock',16)} Unlock chat</button>${this.applicationButton('btn ghost')}</div><p class="small muted" data-chat-application-note hidden></p></form>`);void this.accessStatus?.().catch(()=>{});return;
+      if(['countdown','question'].includes(this.state().roomState?.phase)){
+        this.modal('Chat is locked','<p>Enter your invitation code before the quiz or between questions.</p>');
+        backToRoomSettings();
+        return;
+      }
+      this.modal('Unlock chat',`<form id="chat-unlock-form"><p>One invitation code enables chat for your account and future quizzes.</p><div class="field"><label for="chat-unlock-code">12-digit code</label><input id="chat-unlock-code" type="password" inputmode="numeric" pattern="[0-9]{12}" minlength="12" maxlength="12" autocomplete="off" required placeholder="••••••••••••"></div><div class="chat-access-actions"><button class="btn primary" type="submit">${this.icon('lock',16)} Unlock chat</button>${this.applicationButton('btn ghost')}</div><p class="small muted" data-chat-application-note hidden></p></form>`);backToRoomSettings();void this.accessStatus?.().catch(()=>{});return;
     }
     this.modal('Chat settings',`<form id="chat-settings-form"><div class="field"><label for="live-chat-mode">When chat opens</label><select id="live-chat-mode">${CHAT_OPTIONS.map(([value,label])=>`<option value="${value}" ${config.chatMode===value?'selected':''}>${label}</option>`).join('')}</select><span class="hint">Always closed during countdowns and questions.</span></div><label class="checkbox-row"><input type="checkbox" id="live-chat-replies" ${config.chatReplies?'checked':''}>Replies</label><label class="checkbox-row"><input type="checkbox" id="live-chat-reactions" ${config.chatReactions?'checked':''}>Emoji reactions</label><label class="checkbox-row"><input type="checkbox" id="live-chat-mentions" ${config.chatMentions?'checked':''}>Participant mentions</label><button class="btn primary full" type="submit">Save</button></form>`,this.messages.length?'<button class="quiet-button" data-action="chat-clear">Clear messages</button>':'');
+    backToRoomSettings();
   }
   composeAnnouncement() {
     this.modal('Announcement',`<form id="announcement-form"><div class="field"><label class="sr-only" for="announcement-text">Announcement</label><textarea id="announcement-text" maxlength="240" placeholder="Quiz starting in {20} minutes" required>${esc(this.announcement?.text||'')}</textarea><span class="hint">Use {time}. Example: Quiz starting in {20} minutes · 1–60 mins</span></div><div id="form-error" role="alert"></div><button class="btn primary full" type="submit">Send to everyone</button></form>`,this.announcement?'<button class="quiet-button" data-action="announcement-clear">Remove announcement</button>':'');

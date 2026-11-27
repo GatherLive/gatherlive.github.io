@@ -16,7 +16,8 @@ export function createFeaturesLiveEvents(context: AppContext) {
         return false;
     }
     function onKeydown(event) {
-        if (S.room?.role === 'player' && S.roomState?.phase === 'question' && !S.answerSent && !S.answerPending && /^[1-8]$/.test(event.key)) {
+        if ((S.room?.role === 'player' || S.roomState?.hostPlaying) && S.roomState?.phase === 'question' &&
+            !S.roomState.autoplay?.clockPaused && !S.answerSent && !S.answerPending && /^[1-8]$/.test(event.key)) {
             const q = S.roomState.question;
             if (!['single', 'multi', 'true_false', 'poll'].includes(q.type))
                 return true;
