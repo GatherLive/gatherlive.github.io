@@ -10,7 +10,7 @@ Gather uses TypeScript. Edit application code in `src/` and static assets in `pu
 | `src/client/features/` | Page and feature controllers, views and related styles. |
 | `src/client/styles/` | Shared theme, layout and loading styles. |
 | `src/shared/types.ts` | Quiz, participant, chat and account data contracts. |
-| `src/shared/quiz/` | Quiz validation, server scoring, rounds and results. |
+| `src/shared/quiz/` | Quiz validation, server scoring, rounds and results eligibility. |
 | `src/shared/rooms/` | Room protocol, join verification, rate limits and optional service routing. |
 | `src/shared/http/` | Shared HTTP routes and authentication. |
 | `src/shared/account/` | Usage, image handling, report saving and deletion. |

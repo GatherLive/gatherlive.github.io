@@ -13,6 +13,7 @@ Free, open-source live quizzes for everyone.
 | Play modes | Host a quiz, play solo, or join in with friends. |
 | Live game | Reveal answers on an avatar stage with manual or timed turns. |
 | Competition | Use lives, review notes, duplicate and secret answers, and custom teams. |
+| Just for fun | Let selected players join in while keeping them out of standings and prize draws. |
 | Question types | Use 11 formats, including multiple choice, word clouds, sliders and image pins. |
 | Pin on image | Place the correct dot and resize a circle or box for accepted answers. |
 | Game settings | Choose timers, scoring, shuffling, rounds, rewards and leaderboards. |

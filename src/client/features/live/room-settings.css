@@ -21,3 +21,10 @@
 .room-mode-option small { display: block; color: var(--muted); margin-top: 4px; font-size: 12px; }
 .room-game-reveal { margin: 14px 0 0; }
 .room-game-reveal-interval[hidden] { display: none; }
+.room-chat-setting[hidden], .room-result-search[hidden] { display: none; }
+.room-result-player-list { max-height: min(40vh, 320px); overflow-y: auto; overscroll-behavior: contain; }
+.room-result-player-list .room-mode-option { padding-inline: 4px; overflow-wrap: anywhere; }
+.room-result-player-list .room-mode-option input[aria-disabled=true] { opacity: .6; }
+.room-results-empty { padding-block: 12px; }
+.room-result-player-status { display: block; color: var(--muted); font-size: 12px; margin-top: 8px; }
+.room-result-player-status:empty { display: none; }

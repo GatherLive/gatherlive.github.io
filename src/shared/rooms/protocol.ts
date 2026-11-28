@@ -32,7 +32,7 @@ export async function authorize(engine,meta,env,message,verification?: {check?: 
   return {identity:{role:'player',playerId:result.playerId,...conversation,...([1,2].includes(message.mediaVersion)?{mediaVersion:message.mediaVersion}:{})},welcome:{type:'welcome',role:'player',...result,...([1,2].includes(message.mediaVersion)?{imageManifest:engine.imageManifest()}:{})},freshPlayer};
 }
 export function safeError(error, command?: DataRecord) {
-  const scope=command?.type==='autoplay'?'autoplay':command?.type==='room_mode'?'room-mode':null;
+  const scope=command?.type==='autoplay'?'autoplay':command?.type==='room_mode'?'room-mode':command?.type==='room_player_results'?'room-player-results':null;
   const reference=scope&&typeof command.requestId==='string'&&command.requestId.length<=80;
   return {type:'error',...(error.name === 'EngineError' ? {code: error.code} : {}),message:error.status || error.name === 'EngineError' ? error.message : 'The room could not complete that action. Please retry.',...(reference?{scope,requestId:command.requestId}:{})};
 }

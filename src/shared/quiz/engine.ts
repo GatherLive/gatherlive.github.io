@@ -1,6 +1,6 @@
 import {makeJoinCode,sameJoinCode,JOIN_CODE_PERIOD} from '../rooms/join-verification.js';
 import {normalizeAvatar, type AvatarProfile} from '../avatars/profile.js';
-import type {Quiz, Question, GameSettings, RoomPhase, RoomMode, RoomPlayer, RoomIdentity, Standing, RoundResult, ImageAsset, MediaGate, RoomAutoplay, DataRecord, CompetitionSettings, CompetitionReview, CompetitionRow, CompetitionReason, TeamId} from '../types.js';
+import type {Quiz, Question, GameSettings, RoomPhase, RoomMode, RoomPlayer, RoomResultPlayer, RoomIdentity, Standing, RoundResult, ImageAsset, MediaGate, RoomAutoplay, DataRecord, CompetitionSettings, CompetitionReview, CompetitionRow, CompetitionReason, TeamId} from '../types.js';
 import {createImagePlan, imageSource} from '../media/room-media.js';
 import {RoomConversation,chatSettings,CONVERSATION_COMMANDS,type ConversationPhase} from '../chat/conversation.js';
 import {AUTOPLAY_IDLE_MS, AUTOPLAY_IMAGE_WAIT_MS, AUTOPLAY_SLIDE_MS, ROOM_LIFETIME_MS, FINISHED_RETENTION_MS, defaultAutoplay, validAutoplayOptions} from '../rooms/autoplay.js';
@@ -252,6 +252,7 @@ export class RoomEngine {
   declare updatedAt: number;
   declare locked: boolean;
   declare players: Map<string, RoomPlayer>;
+  declare justForFunPlayers: Map<string, TeamId | null>;
   declare _names: Map<string, string>;
   declare _standings: Standing[] | null;
   declare _publicReveal: DataRecord | null;
@@ -325,6 +326,7 @@ export class RoomEngine {
     this.updatedAt = this.createdAt;
     this.locked = false;
     this.players = new Map();
+    this.justForFunPlayers = new Map();
     this._names = new Map();
     this._standings = null;
     this._publicReveal = null;
@@ -379,6 +381,7 @@ export class RoomEngine {
     this.updatedAt = raw.updatedAt;
     this.locked = !!raw.locked;
     this.players = new Map((raw.players ?? []).map((p) => [p.id, { ...clone(p), overallScore: p.overallScore ?? p.score }]));
+    this.justForFunPlayers = new Map(raw.justForFunPlayers ?? []);
     this._names = new Map([...this.players.values()].map((p) => [normalized(p.name), p.id]));
     this._standings = null;
     this._publicReveal = null;
@@ -394,7 +397,8 @@ export class RoomEngine {
       competitionRoster:this.competitionRoster?[...this.competitionRoster]:null,competitionJoinOrder:this.competitionJoinOrder,
       competitionRevealCount:this.competitionRevealCount,teamRoster:this.teamRoster,teamLives:this.teamLives
     }:{};
-    return clone({ version: 1, code: this.code, joinVerificationSecret: this.joinVerificationSecret, ownerId: this.ownerId, capacityLimit: this.capacityLimit, chatUnlocked: this.chatUnlocked, quiz: this.quiz, imagePlan: this.imagePlan, mediaGate:this.mediaGate, settings: this.settings, ...(includeConversation?{conversation:this.conversation.serialize()}:{}), phase: this.phase, phaseSince: this.phaseSince, autoplay: this.autoplay, mode: this.mode, hostPlayerId: this.hostPlayerId, ...(this.hostAvatar?{hostAvatar:this.hostAvatar}:{}), questionIndex: this.questionIndex, roundIndex: this.roundIndex, roundResults: this.roundResults, startedAt: this.startedAt, finishedAt: this.finishedAt, questionTimings: this.questionTimings, deadline: this.deadline, createdAt: this.createdAt, updatedAt: this.updatedAt, locked: this.locked, players: includePlayers ? [...this.players.values()] : [], winners: this.winners, drawnPlayerIds: [...this.drawnPlayerIds], draws: this.draws,...competition });
+    const eligibility=this.justForFunPlayers.size?{justForFunPlayers:[...this.justForFunPlayers]}:{};
+    return clone({ version: 1, code: this.code, joinVerificationSecret: this.joinVerificationSecret, ownerId: this.ownerId, capacityLimit: this.capacityLimit, chatUnlocked: this.chatUnlocked, quiz: this.quiz, imagePlan: this.imagePlan, mediaGate:this.mediaGate, settings: this.settings, ...(includeConversation?{conversation:this.conversation.serialize()}:{}), phase: this.phase, phaseSince: this.phaseSince, autoplay: this.autoplay, mode: this.mode, hostPlayerId: this.hostPlayerId, ...(this.hostAvatar?{hostAvatar:this.hostAvatar}:{}), questionIndex: this.questionIndex, roundIndex: this.roundIndex, roundResults: this.roundResults, startedAt: this.startedAt, finishedAt: this.finishedAt, questionTimings: this.questionTimings, deadline: this.deadline, createdAt: this.createdAt, updatedAt: this.updatedAt, locked: this.locked, players: includePlayers ? [...this.players.values()] : [], winners: this.winners, drawnPlayerIds: [...this.drawnPlayerIds], draws: this.draws,...competition,...eligibility });
   }
   _limitCompetitionSeats() {
     const competition=this.settings.competition;
@@ -450,6 +454,7 @@ export class RoomEngine {
     const oldHost=this.players.get(this.hostPlayerId);
     if(oldHost){
       this.players.delete(oldHost.id);
+      this.justForFunPlayers.delete(oldHost.id);
       this._names.delete(normalized(oldHost.name));
     }
     this.mode=mode;
@@ -674,6 +679,8 @@ export class RoomEngine {
     if(this.question&&Object.hasOwn(player.answers,this.question.id))this._answerCount--;
     this._names.delete(normalized(player.name));
     this.players.delete(player.id);
+    if(this.justForFunPlayers.has(player.id)&&!(player.team&&this.competitionRoster?.has(player.id))&&
+        !this.roundResults.some(round=>round.leaderboard.some(standing=>standing.id===player.id)))this.justForFunPlayers.delete(player.id);
     this.competitionEntrants.delete(player.id);
     this._standings=null;
     this._publicReveal=null;
@@ -743,7 +750,8 @@ export class RoomEngine {
     if(at===null||now<at)return false;
     if(this.phase==='lobby')this._queueQuestion(0);
     else if(this.phase==='round_results'){
-      if(this.roundResults.at(-1)?.tied)this._drawRound();
+      const round=this.roundResults.at(-1);
+      if(round&&this._roundForResults(round).tied)this._drawRound();
       if(this.roundIndex+1<this.settings.rounds.length&&!this._competitionGameDecided())this._nextRound();
       else this._finish();
     }else this._next();
@@ -909,6 +917,9 @@ export class RoomEngine {
         if (typeof message.joinVerification !== 'boolean') fail('INVALID_SETTINGS', 'Choose whether join verification is enabled.');
         this.settings.joinVerification = message.joinVerification;this._touch();
         return {type: 'room_settings_updated', joinVerification: this.settings.joinVerification};
+      case 'room_player_results':
+        if(identity.userId!==this.ownerId)fail('FORBIDDEN','Only the host can update who appears in results.');
+        return this._updatePlayerEligibility(message);
       case 'start':
         if (this.phase !== 'lobby') fail('INVALID_PHASE', 'This quiz has already started.');
         if(!this._competitionReady())fail('TEAMS_NOT_READY','Connect at least one player on each team.');
@@ -964,6 +975,19 @@ export class RoomEngine {
       default: fail('INVALID_COMMAND', 'Command is unsupported.');
     }
   }
+  _updatePlayerEligibility(message: DataRecord) {
+    if(this.phase==='finished')fail('INVALID_PHASE','Final results are locked.');
+    if(this.isSelfStudy)fail('INVALID_PHASE','Open a multiplayer room to change results eligibility.');
+    if(typeof message.justForFun!=='boolean')fail('INVALID_COMMAND','Choose whether this player is playing just for fun.');
+    const player=typeof message.playerId==='string'?this.players.get(message.playerId):undefined;
+    if(!player)fail('PLAYER_MISSING','Player was not found.');
+    if(message.justForFun)this.justForFunPlayers.set(player.id,player.team??null);
+    else this.justForFunPlayers.delete(player.id);
+    this._standings=null;
+    this._touch();
+    return {type:'room_player_results_updated',playerId:player.id,justForFun:message.justForFun,
+      requestId:typeof message.requestId==='string'&&message.requestId.length<=80?message.requestId:undefined};
+  }
   _queueQuestion(index) {
     this.competitionReview=null;
     if(this.settings.competition&&this.phase==='lobby'){
@@ -1000,10 +1024,10 @@ export class RoomEngine {
   _completeRound() {
     const round = this._round();
     if (!round || this.roundResults.some((result) => result.id === round.id)) return;
-    const leaderboard = clone(this._leaderboard());
+    const leaderboard = this._scoreStandings({includeForFun:true});
     const topScore = leaderboard[0]?.score ?? 0;
     const competitive=this.settings.competition;
-    const winningTeams=this._winningTeams(false);
+    const winningTeams=this._winningTeams(false,{includeForFun:true});
     const winners = competitive ? this._competitionWinners(leaderboard,winningTeams) : topScore > 0 ? leaderboard.filter((p) => p.score === topScore) : [];
     const points=competitive?.lives?{hasPoints:topScore>0||this._playedForPoints(this.quiz.questions.slice(this._roundStartIndex(),this.questionIndex+1))}:{};
     this.roundResults.push({ id: round.id, index: round.index, title: round.title, reward: round.reward, leaderboard, winners, ...points, tied: !competitive&&winners.length > 1, completedAt: this.now(),...(winningTeams?{winningTeams}:{}) });
@@ -1014,9 +1038,10 @@ export class RoomEngine {
   _drawRound() {
     if (this.phase !== 'round_results') fail('INVALID_PHASE', 'Complete the round before resolving a tie.');
     const result = this.roundResults.find((round) => round.index === this.roundIndex);
-    if (!result?.tied || result.winners.length < 2) fail('INVALID_PHASE', 'This round has no unresolved tie.');
-    result.tiedLeaders = clone(result.winners);
-    result.winners = [clone(result.winners[randomInt(result.winners.length)])];
+    const round = result ? this._roundForResults(result) : null;
+    if (!round?.tied || round.winners.length < 2) fail('INVALID_PHASE', 'This round has no unresolved tie.');
+    result.tiedLeaders = clone(round.winners);
+    result.winners = [clone(round.winners[randomInt(round.winners.length)])];
     result.tied = false;
     result.tieResolvedAt = this.now();
     this._touch();
@@ -1026,6 +1051,7 @@ export class RoomEngine {
     if(this.settings.competition)this.winners=this._competitionWinners(this._leaderboard(),this._winningTeams(true));
     this._setPhase('finished');
     this._standings=null;
+    this._publicReveal=null;
     Object.assign(this.autoplay,{status:'off',pausedAt:null});
     this.deadline=null;this.finishedAt=this.now();this.conversation.finish();this._touch();
   }
@@ -1285,27 +1311,41 @@ export class RoomEngine {
   _competitionGameDecided() {
     return (!this.settings.roundsEnabled||this.settings.competition?.livesReset!=='round')&&this._competitionDecided();
   }
-  _teamStandings(overall: boolean) {
+  _resultTeamRoster() {
+    if(!this.teamRoster||!this.justForFunPlayers.size)return this.teamRoster;
+    const roster={...this.teamRoster};
+    for(const [id,team] of this.justForFunPlayers){
+      if(team&&this.competitionRoster?.has(id))roster[team]--;
+    }
+    return roster;
+  }
+  _teamStandings(overall: boolean, {includeForFun=false, recorded}: {includeForFun?: boolean; recorded?: Standing[]} = {}) {
     const teams=this.settings.competition?.teams;
     if(!teams)return;
-    const seats=this._teamSeats();
+    const roster=includeForFun?this.teamRoster:this._resultTeamRoster();
+    const seats={a:0,b:0};
     const scores={a:0,b:0},alive={a:0,b:0};
-    for(const player of this.players.values()){
-      if(!player.team||this.competitionRoster&&!this.competitionRoster.has(player.id))continue;
-      scores[player.team]+=overall?(player.overallScore??player.score):player.score;
-      if(this._lives(player)!==0)alive[player.team]++;
+    for(const player of recorded??this.players.values()){
+      const team=player.team;
+      if(!team||!includeForFun&&this.justForFunPlayers.has(player.id))continue;
+      seats[team]++;
+      if(this.competitionRoster&&!this.competitionRoster.has(player.id))continue;
+      scores[team]+=overall&&'overallScore' in player?(player.overallScore??player.score):player.score;
+      const lives='resumeToken' in player?this._lives(player):player.lives;
+      if(lives!==0)alive[team]++;
     }
     return TEAM_IDS.map(id=>({
       id,size:seats[id],capacity:teams[id],alive:alive[id],
-      score:scores[id]/(this.teamRoster?.[id]||seats[id]||1),
+      score:scores[id]/(roster?.[id]||seats[id]||1),
       ...(this.teamLives?{lives:this.teamLives[id]}:{})
     }));
   }
-  _winningTeams(overall: boolean): TeamId[] | undefined {
+  _winningTeams(overall: boolean, {includeForFun=false,recorded}: {includeForFun?: boolean; recorded?: Standing[]} = {}): TeamId[] | undefined {
     const teams=this.settings.competition?.teams;
     if(!teams)return;
-    if(!this.teamRoster)return [];
-    const entries=this._teamStandings(overall).filter(entry=>this.teamRoster[entry.id]>0&&entry.size>0);
+    const roster=includeForFun?this.teamRoster:this._resultTeamRoster();
+    if(!roster)return [];
+    const entries=this._teamStandings(overall,{includeForFun,recorded}).filter(entry=>roster[entry.id]>0&&entry.size>0);
     if(teams.scoring==='elimination')return entries.filter(entry=>entry.alive>0).map(entry=>entry.id);
     const highest=Math.max(...entries.map(entry=>entry.score));
     return entries.filter(entry=>entry.score===highest).map(entry=>entry.id);
@@ -1323,7 +1363,7 @@ export class RoomEngine {
     return questions.some(question=>Object.hasOwn(this.questionTimings,question.id)&&this.questionTimings[question.id]?.closedAt!=null&&questionAwardsPoints(question,teamScoring));
   }
   _hasResultPoints() {
-    return this._playedForPoints()||[...this.players.values()].some(player=>(player.overallScore??player.score)>0);
+    return this._playedForPoints()||[...this.players.values()].some(player=>!this.justForFunPlayers.has(player.id)&&(player.overallScore??player.score)>0);
   }
   _competitionSnapshot(forHost: boolean, q: Question, revealed: boolean) {
     const settings=this.settings.competition;
@@ -1344,7 +1384,7 @@ export class RoomEngine {
     if(settings&&this.phase==='question')state.answering=this.competitionEntrants.size;
     if(settings?.teams){
       const {assignment,scoring,sharedLives}=settings.teams;
-      const entries=this._teamStandings(this.phase==='finished');
+      const entries=this._teamStandings(this.phase==='finished',{includeForFun:!['round_results','finished'].includes(this.phase)});
       state.teams={assignment,scoring,sharedLives,entries:forHost||this.settings.showLeaderboard||this.phase==='finished'?
         entries:entries.map(({score,...entry})=>entry)};
       if(this.phase==='lobby')state.ready=this._competitionReady();
@@ -1357,14 +1397,17 @@ export class RoomEngine {
       if(winningTeams)state.winningTeams=winningTeams;
     }
     if(!revealed||!q)return state;
+    const resultsOnly=this.phase==='finished'&&this.justForFunPlayers.size>0;
     const review=this.competitionReview;
     if(review&&review.questionId===q.id){
       const revealing=review.revealed<review.rows.length;
       const gameTurns=review.reveal==='turns';
       const named=!!game||q.competition?.publicAnswers;
       const share=named&&(!!game||review.applied||q.competition?.reveal==='turns');
-      const rows=forHost?review.rows:share?
-        review.rows.slice(revealing&&!gameTurns?Math.max(0,review.revealed-1):0,review.revealed):[];
+      const eligibleRows=resultsOnly?review.rows.filter(row=>!this.justForFunPlayers.has(row.playerId)):review.rows;
+      const revealedCount=resultsOnly?review.rows.slice(0,review.revealed).filter(row=>!this.justForFunPlayers.has(row.playerId)).length:review.revealed;
+      const rows=forHost?eligibleRows:share?
+        eligibleRows.slice(revealing&&!gameTurns?Math.max(0,revealedCount-1):0,revealedCount):[];
       const resultRows=rows.map(({playerId,name,answer,reason,accepted,lostLife,note})=>{
         const publicReason=review.applied||gameTurns&&lostLife!==undefined?reason:null;
         return {playerId,name,answer,...(forHost||publicReason?{reason}:{}),
@@ -1376,16 +1419,16 @@ export class RoomEngine {
       const optionIndex=secret&&q.options?q.options.findIndex(option=>option.id===secret):-1;
       const hostAnswer=optionIndex>=0?(q.options[optionIndex].text||`Choice ${optionIndex+1}`):secret;
       state.review={
-        stage:review.applied?'complete':revealing?'revealing':'review',total:review.rows.length,revealed:review.revealed,...(review.reveal?{reveal:review.reveal}:{}),
+        stage:review.applied?'complete':revealing?'revealing':'review',total:eligibleRows.length,revealed:revealedCount,...(review.reveal?{reveal:review.reveal}:{}),
         ...(forHost&&!review.applied&&!revealing&&review.id?{id:review.id}:{}),
-        ...(game?{stageTotal:review.rows.filter(row=>this.players.get(row.playerId)?.connected).length}:{}),
+        ...(game?{stageTotal:eligibleRows.filter(row=>this.players.get(row.playerId)?.connected).length}:{}),
         ...(forHost&&revealing&&gameTurns?{automatic:review.autoRevealAt!==undefined}:{}),
         rows:resultRows,canReview:forHost&&!review.applied&&questionRule(q)==='unique',...(hostAnswer?{hostAnswer}:{})
       };
     }else if(q.competition?.publicAnswers&&questionRule(q)==='classic'){
       const rows=[];
       for(const player of this.players.values()){
-        if(!Object.hasOwn(player.answers,q.id))continue;
+        if(!Object.hasOwn(player.answers,q.id)||resultsOnly&&this.justForFunPlayers.has(player.id))continue;
         const answer=player.answers[q.id].answer;
         rows.push({playerId:player.id,name:player.name,connected:player.connected,answer:!forHost&&typeof answer==='string'&&answer.length>200?answer.slice(0,200)+'…':answer});
       }
@@ -1402,7 +1445,7 @@ export class RoomEngine {
       Number(b.lives>0)-Number(a.lives>0)||
       (b.elimination?.question??0)-(a.elimination?.question??0)||
       (b.elimination?.turn??0)-(a.elimination?.turn??0);
-    const entries=[...this.players.values()].filter(player=>this.competitionRoster?.has(player.id)).map(player=>{
+    const entries=[...this.players.values()].filter(player=>this.competitionRoster?.has(player.id)&&!this.justForFunPlayers.has(player.id)).map(player=>{
       const lives=this._lives(player);
       return {id:player.id,name:player.name,score:player.overallScore??player.score,lives,
         ...(player.team?{team:player.team}:{}),...(lives===0&&player.elimination?{elimination:player.elimination}:{})};
@@ -1414,16 +1457,39 @@ export class RoomEngine {
       return {...entry,rank};
     });
   }
-  _leaderboard() {
-    if (this._standings) return this._standings;
-    if(this.phase==='finished'&&this._ranksByElimination())return this._standings=this._eliminationStandings();
+  _rankScores(standings: Standing[]): Standing[] {
     let rank = 0;
-    let previousScore = null;
-    this._standings = [...this.players.values()].sort((a, b) => b.score - a.score || a.joinedAt - b.joinedAt || a.id.localeCompare(b.id)).map((p, index) => {
-      if (previousScore !== p.score) rank = index + 1;
-      previousScore = p.score;
-      return { id: p.id, name: p.name, score: p.score, rank, ...this._playingFields(p) };
+    return standings.map((player,index)=>{
+      if(!index||standings[index-1].score!==player.score)rank=index+1;
+      return {...player,rank};
     });
+  }
+  _scoreStandings({includeForFun=false,overall=false} = {}) {
+    const score = (player: RoomPlayer) => overall ? player.overallScore ?? player.score : player.score;
+    const standings = [...this.players.values()].filter(player=>includeForFun||!this.justForFunPlayers.has(player.id))
+      .sort((a,b)=>score(b)-score(a)||a.joinedAt-b.joinedAt||a.id.localeCompare(b.id))
+      .map(player=>({id:player.id,name:player.name,score:score(player),...this._playingFields(player)}));
+    return this._rankScores(standings);
+  }
+  _roundForResults(round: RoundResult): RoundResult {
+    if(!this.justForFunPlayers.size&&round.tieResolvedAt===undefined)return round;
+    const leaderboard=this._rankScores(round.leaderboard.filter(player=>!this.justForFunPlayers.has(player.id)));
+    if(this.settings.competition){
+      const winningTeams=this._winningTeams(false,{recorded:leaderboard});
+      return {...round,leaderboard,winners:this._competitionWinners(leaderboard,winningTeams),...(winningTeams?{winningTeams}:{})};
+    }
+    const {tieResolvedAt,tiedLeaders,...summary}=round;
+    const topScore=leaderboard[0]?.score??0;
+    const winners=topScore>0?leaderboard.filter(player=>player.score===topScore):[];
+    const drawn=tieResolvedAt!==undefined?winners.find(player=>player.id===round.winners[0]?.id):undefined;
+    // A draw still applies if the winner remains eligible and every current contender was included.
+    if(drawn&&winners.every(player=>tiedLeaders?.some(leader=>leader.id===player.id))){
+      return {...summary,leaderboard,winners:[drawn],tied:false,tieResolvedAt,tiedLeaders:winners};
+    }
+    return {...summary,leaderboard,winners,tied:winners.length>1};
+  }
+  _leaderboard() {
+    if(!this._standings)this._standings=this.phase==='finished'&&this._ranksByElimination()?this._eliminationStandings():this._scoreStandings();
     return this._standings;
   }
   _draw(message) {
@@ -1432,7 +1498,7 @@ export class RoomEngine {
     const mode = message.mode ?? 'all';
     const count = message.count ?? 1;
     if (!['all', 'correct', 'top'].includes(mode) || !Number.isSafeInteger(count) || count < 1 || count > 100) fail('INVALID_COMMAND', 'Choose a valid draw mode and 1–100 winners.');
-    let eligible = [...this.players.values()].filter((p) => !this.drawnPlayerIds.has(p.id));
+    let eligible = [...this.players.values()].filter((p) => !this.drawnPlayerIds.has(p.id)&&!this.justForFunPlayers.has(p.id));
     if (mode === 'correct') eligible = eligible.filter((p) => Object.values(p.answers).some((a) => a.correct === true));
     if (eligible.length < count) fail('NOT_ENOUGH_PLAYERS', 'There are not enough eligible players for this draw.');
     // Randomize before a stable score sort so equal scores have equal chances.
@@ -1450,13 +1516,14 @@ export class RoomEngine {
     if (!player) return null;
     const answer = this.startedAt != null && this.question && Object.hasOwn(player.answers, this.question.id) ? player.answers[this.question.id] : null;
     const me: DataRecord = { id: player.id, name: player.name, score: player.score, answered: !!answer,...this._playingFields(player),...(player.avatar?{avatar:player.avatar}:{}) };
+    if(this.justForFunPlayers.has(playerId))me.justForFun=true;
     if(this.phase==='question'&&!this._canAnswer(player))me.spectating=true;
     if(this.competitionReview?.applied){
       const row=this.competitionReview.rows.find(row=>row.playerId===player.id);
       if(row)me.competitionReason=row.reason;
     }
     if(this.phase==='finished'||this.isSelfStudy&&this.hostPlayerId===playerId)me.overallScore=player.overallScore;
-    if(this.phase==='finished'&&this._ranksByElimination()){
+    if(this.phase==='finished'&&this._ranksByElimination()&&!me.justForFun){
       const placement=this._leaderboard().find(standing=>standing.id===playerId);
       if(placement)Object.assign(me,{rank:placement.rank,elimination:placement.elimination});
       else me.spectating=true;
@@ -1475,8 +1542,9 @@ export class RoomEngine {
   }
   snapshot(forHost = false, playerId = null, {media = false, conversation = false}: {media?: boolean | number; conversation?: boolean} = {}) {
     const q = this.question;
+    const finished = this.phase === 'finished';
     const showAnswerOptions=this.mode!=='live'||this.settings.showAnswerOptions;
-    const revealed = this.startedAt != null && (this.phase === 'reveal' || this.phase === 'finished');
+    const revealed = this.startedAt != null && (this.phase === 'reveal' || finished);
     const answersVisible=revealed&&(!this.competitionReview||this.competitionReview.reveal!=='turns'||this.competitionReview.applied);
     let question = null;
     if (q && this.startedAt != null && ['question', 'reveal', 'finished'].includes(this.phase)) {
@@ -1493,12 +1561,21 @@ export class RoomEngine {
     }
     const activePlayers = [...this.players.values()].filter(player => player.connected);
     const visibleLimit = forHost ? activePlayers.length : this.phase === 'lobby' ? 50 : 10;
-    const visiblePlayers = activePlayers.slice(0, visibleLimit);
+    const visiblePlayers = (finished ? activePlayers.filter(player=>!this.justForFunPlayers.has(player.id)) : activePlayers).slice(0,visibleLimit);
     const showScores = forHost || this.settings.showLeaderboard || this.phase === 'finished';
     const players = visiblePlayers.map((p) => ({ id: p.id, name: p.name, ...(showScores ? { score: p.score } : {}), connected: p.connected, answered: !!q && Object.hasOwn(p.answers, q.id),...this._playingFields(p),...(p.avatar&&this.phase==='lobby'?{avatar:p.avatar}:{}) }));
-    const answerCount = this.phase === 'question' && q ? activePlayers.filter(player => Object.hasOwn(player.answers, q.id)).length : this._answerCount;
+    let answerCount = this.phase === 'question' && q ? activePlayers.filter(player => Object.hasOwn(player.answers, q.id)).length : this._answerCount;
+    if(finished&&q&&this.justForFunPlayers.size){
+      for(const id of this.justForFunPlayers.keys()){
+        const player=this.players.get(id);
+        if(player&&Object.hasOwn(player.answers,q.id))answerCount--;
+      }
+    }
     // Public live updates stay bounded even with large rooms; reports retain every standing.
-    const roundResults = this.roundResults.map((round) => ({ ...round, leaderboard: forHost ? round.leaderboard : this.settings.showLeaderboard ? round.leaderboard.slice(0, 10) : [] }));
+    const roundResults = this.roundResults.map(round=>{
+      const official=this._roundForResults(round);
+      return {...official,leaderboard:forHost?official.leaderboard:this.settings.showLeaderboard?official.leaderboard.slice(0,10):[]};
+    });
     const showStandings = forHost || this.settings.showLeaderboard || this.phase === 'finished' && !this._ranksByElimination();
     const result: DataRecord = { code: this.code, title: this.quiz.title, phase: this.phase, role: forHost ? 'host' : playerId ? 'player' : 'spectator', questionIndex: this.questionIndex, totalQuestions: this.quiz.questions.length, round: this._round(), roundResults: clone(roundResults), question, deadline: this.deadline, serverNow: this.now(), players, participantCount: activePlayers.length, leaderboard: showStandings ? clone(forHost ? this._leaderboard() : this._leaderboard().slice(0, 10)) : [], answerCount, settings: clone(this.settings), locked: this.locked, winners: clone(this.winners) };
     const {status,startsAt,clockPaused,pausedAt,options,pauseReason}=this.autoplay;
@@ -1506,6 +1583,10 @@ export class RoomEngine {
     if(this.hostAvatar&&forHost)result.hostAvatar=this.hostAvatar;
     result.study=this.isSelfStudy;
     result.hostPlaying=forHost&&!!this.hostPlayerId;
+    if(forHost&&!this.isSelfStudy&&!finished){
+      const resultPlayers: RoomResultPlayer[] = [...this.players.values()].map(({id,name,connected})=>({id,name,connected,justForFun:this.justForFunPlayers.has(id)}));
+      result.resultPlayers=resultPlayers;
+    }
     result.settings.showAnswerOptions=showAnswerOptions;
     if(this.isSelfStudy)result.settings.joinVerification=false;
     result.autoplay={
@@ -1560,6 +1641,7 @@ export class RoomEngine {
     const responses = [];
     let responseCount = 0;
     for (const p of this.players.values()) {
+      if(this.phase==='finished'&&this.justForFunPlayers.has(p.id))continue;
       const a = Object.hasOwn(p.answers, q.id) ? p.answers[q.id] : null;
       if (!a) continue;
       if (q.options) for (const id of Array.isArray(a.answer) ? a.answer : [a.answer]) distribution[id as string]++;
@@ -1577,15 +1659,13 @@ export class RoomEngine {
   /** Call only from an authenticated owner endpoint. Reports contain player answers. */
   report() {
     if (this.phase !== 'finished') fail('INVALID_PHASE', 'Finish the quiz to view its report.');
-    let rank = 0, previous = null;
-    const overallLeaderboard = this._ranksByElimination()?this._leaderboard():[...this.players.values()].sort((a,b)=>(b.overallScore??b.score)-(a.overallScore??a.score)||a.joinedAt-b.joinedAt||a.id.localeCompare(b.id)).map((p,index)=>{
-      const score=p.overallScore??p.score;
-      if(score!==previous)rank=index+1;
-      previous=score;
-      return {id:p.id,name:p.name,score,rank,...this._playingFields(p)};
-    });
+    const leaderboard=this._leaderboard();
+    const overallLeaderboard=this._ranksByElimination()?leaderboard:this._scoreStandings({overall:true});
     const competition=this._competitionSnapshot(true,null,false);
-    return clone({ code: this.code, title: this.quiz.title, createdAt: this.createdAt, finishedAt: this.finishedAt, settings: this.settings, ...(competition?.lives>0?{hasPoints:this._hasResultPoints()}:{}), leaderboard: this._leaderboard(), overallLeaderboard, roundResults: this.roundResults, winners: this.winners, draws: this.draws, detailVersion: 1, participantCount:this.players.size, questionTimings:this.questionTimings, questions: this.quiz.questions, players: [...this.players.values()].map(p=>({id:p.id,name:p.name,joinedAt:p.joinedAt,connected:p.connected,score:p.score,overallScore:p.overallScore??p.score,answers:p.answers,...this._playingFields(p)})),...(competition?{competition}:{}) });
+    const players=[...this.players.values()].filter(player=>!this.justForFunPlayers.has(player.id))
+      .map(p=>({id:p.id,name:p.name,joinedAt:p.joinedAt,connected:p.connected,score:p.score,overallScore:p.overallScore??p.score,answers:p.answers,...this._playingFields(p)}));
+    const roundResults=this.roundResults.map(round=>this._roundForResults(round));
+    return clone({ code: this.code, title: this.quiz.title, createdAt: this.createdAt, finishedAt: this.finishedAt, settings: this.settings, ...(competition?.lives>0?{hasPoints:this._hasResultPoints()}:{}), leaderboard, overallLeaderboard, roundResults, winners: this.winners, draws: this.draws, detailVersion: 1, participantCount:players.length, questionTimings:this.questionTimings, questions: this.quiz.questions, players,...(competition?{competition}:{}) });
 
   }
 }

@@ -64,11 +64,12 @@ export function lifeGameFinish(state: DataRecord, show: boolean) {
     const {label, names} = lifeOutcome(state);
     const winners = state.competition?.winners ?? state.winners ?? [];
     const winnerIds = new Set<string>(winners.map(player => player.id));
-    const available = show ? state.competition?.lifeStandings ?? state.leaderboard ?? [] : state.me ? [state.me] : [];
+    const available = show ? state.competition?.lifeStandings ?? state.leaderboard ?? [] : state.me && !state.me.justForFun ? [state.me] : [];
     const display = {ownId: state.me?.id, points: resultHasPoints(state), ownPointsOnly: !show};
     if (state.competition?.rankedByElimination) {
         const winnerLine = names.length && (!show || state.competition.winningTeams?.length)
             ? `<p class="life-result-team">${label} · ${names.map(esc).join(' · ')}</p>` : '';
+        if (!show && state.me?.justForFun) return winnerLine;
         return `<div class="life-game-finish"><section class="life-result-card">
             <h2>${show ? 'Final standings' : 'Your finish'}</h2>${winnerLine}
             ${!show && state.me?.spectating ? '<p class="muted">Spectator</p>'

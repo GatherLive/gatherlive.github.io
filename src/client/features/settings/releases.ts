@@ -1,4 +1,5 @@
 export const RELEASES=[
+ {version:'1.7.0',date:'2026-11-28',title:'Just for fun',changes:['Choose players who can take part without appearing in standings, reports or prize draws.','Change the selection in Room Settings until final results appear.']},
  {version:'1.6.0',date:'2026-11-27',title:'Answer review and final standings',changes:['Approve or reject answers in bulk, use quick replies, or import AI decisions.','See numbered elimination standings and scroll to spectator cards below players.','Keep enabled chat open for 15 minutes after the quiz.','Undo or redo avatar shuffles.']},
  {version:'1.5.0',date:'2026-11-27',title:'Live games and Autoplay',changes:['Play elimination and team games with avatars and live answer reveals.','Schedule and pause Autoplay, or practise solo and resume later.','See points and lives together in results and downloads.','Reuse question settings and undo or redo quiz edits.']},
  {version:'1.4.0',date:'2026-11-20',title:'Live typing indicators',changes:['See who is typing just above the message box in room chat.']},

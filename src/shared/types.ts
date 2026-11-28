@@ -79,6 +79,7 @@ export interface RoomPlayer {
   mediaVersion?: number; mediaReady?: string; mediaReadyToken?: string; kicked?: boolean; lastSeenAt?: number;
   lives?: number; team?: TeamId; joinOrder?: number; avatar?: AvatarProfile; elimination?: Elimination;
 }
+export type RoomResultPlayer = Pick<RoomPlayer, 'id' | 'name' | 'connected'> & {justForFun: boolean};
 export interface Standing { id: string; name: string; score: number; rank?: number; correct?: number; connected?: boolean; lives?: number; team?: TeamId; elimination?: Elimination }
 export interface RoundResult {
   id: string; index: number; title: string; reward: string; leaderboard: Standing[];

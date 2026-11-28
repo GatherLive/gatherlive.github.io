@@ -267,7 +267,7 @@ Host can:
 - **Save results** – keeps the leaderboard and round summary in **My quizzes › Results**.
 - **Detailed results** – opens the host-only question, participant and round analysis.
 - **CSV** – downloads the results.
-- **Random draw** – pick winners from all players, players with a correct answer, or top scorers.
+- **Random draw** – draw from the final results list. Choose all eligible players, those with a correct answer, or the top scorers.
 
 ### Detailed results
 
@@ -326,6 +326,8 @@ Autoplay pauses when everyone disconnects or after five minutes without an answe
 Pause or resume Autoplay in room Settings. **Use manual controls** turns automatic progression off. **Remember timing on this device** reuses your choices in future rooms.
 
 Open a room with **Host**, then choose **Settings › Play mode** before starting. **Host only** runs the quiz for others. **Group play** lets you answer too. Share the room code to invite friends.
+
+In a multiplayer room, open **Settings › Just for fun** and check the players who are playing for fun. They answer and play as usual. Standings, reports and prize draws exclude them. Uncheck a player to include them again. Changes save automatically and lock when final results appear.
 
 Choose **Solo play** for private practice. **Save and leave** pauses your timer and keeps your answers. Reopen the practice from **My quizzes › Open rooms** within 24 hours of opening the room and select **Resume practice**. Use **Review answers** when you finish.
 

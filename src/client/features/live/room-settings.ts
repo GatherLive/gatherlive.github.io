@@ -1,6 +1,6 @@
 import type {AppContext} from '../../app/context.js';
-import type {RoomMode} from '../../../shared/types.js';
-import {$, uid} from '../../core/dom.js';
+import type {RoomMode, RoomResultPlayer} from '../../../shared/types.js';
+import {$, esc, uid} from '../../core/dom.js';
 import {icon} from '../../core/icons.js';
 import {DEFAULT_REVEAL_DELAY, MAX_REVEAL_DELAY, validRevealDelay} from '../../core/live-game.js';
 
@@ -24,6 +24,15 @@ export function createRoomSettings(context: AppContext) {
     let pendingChange: {roomCode: string; enabled: boolean} | null = null;
     let changeTimeout: ReturnType<typeof setTimeout> | null = null;
     let pendingMode: {id: string; timer: ReturnType<typeof setTimeout>; finish: (error?: string) => void} | null = null;
+    let pendingResults: {id: string; playerId: string; checked: boolean; timer: ReturnType<typeof setTimeout>} | null = null;
+    function clearPendingResults() {
+        if (pendingResults) clearTimeout(pendingResults.timer);
+        pendingResults = null;
+    }
+    function resultPlayers(): RoomResultPlayer[] | null {
+        const st = S.roomState;
+        return S.room?.role === 'host' && st?.phase !== 'finished' && Array.isArray(st?.resultPlayers) ? st.resultPlayers : null;
+    }
     function clearChange() {if(changeTimeout)clearTimeout(changeTimeout);changeTimeout=null;pendingChange=null;}
     const enabled = () => S.room?.role === 'host' && S.connected && !S.roomState?.study && S.roomState?.settings?.joinVerification && S.roomState.phase !== 'finished';
     function requestChallenge() {
@@ -48,6 +57,7 @@ export function createRoomSettings(context: AppContext) {
         if (!valid) requestChallenge();
     }
     function updateRoomSettings(revealMode = S.roomState?.settings?.game?.reveal ?? 'all') {
+        updateResultSettings();
         const canChangeReveal = S.connected && S.roomState?.phase !== 'finished';
         const reveal = $<HTMLSelectElement>('#room-game-reveal');
         if (reveal) {
@@ -93,15 +103,91 @@ export function createRoomSettings(context: AppContext) {
         const modes = st?.mode ? settingRow('room-play-mode','users','Play mode',mode.label,!S.connected || st.phase !== 'lobby') : '';
         const verification = st?.study ? '' : settingRow('room-two-step','lock','Two-step verification',st?.settings?.joinVerification ? 'On' : 'Off');
         const chat = st?.study ? '' : settingRow('chat-settings','chat','Chat settings');
+        const results = resultPlayers() ? settingRow('room-just-for-fun','trophy','Just for fun','',!S.connected) : '';
         const autoplay = st?.autoplay ? settingRow('room-autoplay','clock','Autoplay','',!S.connected) : '';
         const reveal = st?.settings?.game ? `<div class="field room-game-reveal"><label for="room-game-reveal">Answer reveal</label>
             <select id="room-game-reveal" aria-describedby="room-game-reveal-hint"><option value="all">All at once</option><option value="turns">One at a time</option><option value="auto">One at a time · automatic</option></select>
             <span class="hint" id="room-game-reveal-hint">Applies to the next reveal.</span></div>
             <div class="field room-game-reveal-interval"${st.settings.game.reveal === 'auto' ? '' : ' hidden'}><label for="room-game-reveal-delay">Automatic reveal interval (seconds)</label>
             <input type="number" id="room-game-reveal-delay" min="1" max="${MAX_REVEAL_DELAY}" step="1" inputmode="numeric" value="${st.settings.game.revealDelay ?? DEFAULT_REVEAL_DELAY}"></div>` : '';
-        context.modal('Settings', modes + autoplay + verification + chat + reveal);
+        context.modal('Settings', modes + autoplay + verification + chat + results + reveal);
         const done=document.querySelector('.modal-actions [data-action="close-modal"]');if(done)done.textContent='Done';
         updateRoomSettings();
+    }
+    function updateResultSettings() {
+        const button = $<HTMLButtonElement>('.modal [data-action="room-just-for-fun"]');
+        const list = $<HTMLElement>('#room-result-player-list');
+        if (!button && !list) return;
+        const roster = resultPlayers();
+        if (!roster || !S.connected) clearPendingResults();
+        if (button) {
+            button.hidden = !roster;
+            button.disabled = !S.connected;
+        }
+        if (!list) return;
+        if (!roster) {
+            context.closeModal();
+            return;
+        }
+        const search = $<HTMLInputElement>('#room-result-player-search');
+        const query = search.value.trim().normalize('NFKC').toLocaleLowerCase();
+        search.disabled = roster.length < 8 && !query;
+        search.closest('.field')?.toggleAttribute('hidden', search.disabled);
+        const visible = roster.filter(player => player.name.normalize('NFKC').toLocaleLowerCase().includes(query))
+            .sort((a, b) => a.name.localeCompare(b.name));
+        const rosterKey = JSON.stringify(visible.map(({id, name, connected}) => [id, name, connected]));
+        if (list.dataset.roster !== rosterKey) {
+            const scrollTop = list.scrollTop;
+            const focused = document.activeElement?.id;
+            list.dataset.roster = rosterKey;
+            list.innerHTML = visible.length ? visible.map(player => `<label class="room-mode-option">
+                <input type="checkbox" id="room-result-${esc(player.id)}" data-result-player="${esc(player.id)}">
+                <span><strong dir="auto">${esc(player.name)}</strong>${player.connected ? '' : '<small>Disconnected</small>'}</span>
+            </label>`).join('') : `<p class="small muted room-results-empty">${roster.length ? 'No matching players.' : 'Waiting for players.'}</p>`;
+            list.scrollTop = scrollTop;
+            if (focused?.startsWith('room-result-')) document.getElementById(focused)?.focus({preventScroll: true});
+        }
+        const byId = new Map(visible.map(player => [player.id, player]));
+        for (const input of list.querySelectorAll<HTMLInputElement>('[data-result-player]')) {
+            const id = input.dataset.resultPlayer;
+            input.checked = pendingResults?.playerId === id ? pendingResults.checked : byId.get(id)?.justForFun === true;
+            input.disabled = !S.connected;
+            input.setAttribute('aria-disabled', String(!!pendingResults || input.disabled));
+        }
+        const status = $('#room-result-player-status');
+        const message = pendingResults ? 'Saving…' : S.connected ? '' : 'Reconnect to make changes.';
+        if (status.textContent !== message) status.textContent = message;
+    }
+    function openResultSettings() {
+        if (!S.connected || !resultPlayers()) return;
+        context.modal('Just for fun', `<p class="join-verification-hint">Selected players can play as usual. Results and prize draws exclude them.</p>
+            <div class="field room-result-search" hidden>
+                <label class="sr-only" for="room-result-player-search">Find a player</label>
+                <input type="search" id="room-result-player-search" placeholder="Find a player" autocomplete="off">
+            </div>
+            <div class="room-result-player-list" id="room-result-player-list" role="group" aria-label="Players"></div>
+            <small class="room-result-player-status" id="room-result-player-status" role="status"></small>`);
+        backToRoomSettings();
+        updateResultSettings();
+        requestAnimationFrame(() => {
+            const list = $('#room-result-player-list');
+            if (list) (list.querySelector<HTMLInputElement>('input') ?? $<HTMLButtonElement>('.modal [data-action="room-settings"]'))?.focus({preventScroll: true});
+        });
+    }
+    function saveResultPlayer(playerId: string, checked: boolean) {
+        if (pendingResults || !S.connected || !resultPlayers()?.some(player => player.id === playerId)) {
+            updateResultSettings();
+            return;
+        }
+        const id = uid();
+        const timer = setTimeout(() => {
+            clearPendingResults();
+            updateResultSettings();
+            context.toast('The room did not confirm the change. Try again.', true);
+        }, 8000);
+        pendingResults = {id, playerId, checked, timer};
+        if (!context.send({type: 'room_player_results', playerId, justForFun: checked, requestId: id})) clearPendingResults();
+        updateResultSettings();
     }
     function openVerification() {
         if(S.room?.role!=='host'||!S.roomState||S.roomState.study)return;
@@ -158,6 +244,18 @@ export function createRoomSettings(context: AppContext) {
         if (location.hash === destination) context.joinView(room.code);else location.replace(destination);
     }
     function receiveRoomSettings(data) {
+        if (data.type === 'room_player_results_updated' || data.scope === 'room-player-results') {
+            if (pendingResults?.id === data.requestId) {
+                if (data.type === 'error') context.toast(data.message || 'Could not save the change.', true);
+                else {
+                    const player = resultPlayers()?.find(player => player.id === data.playerId);
+                    if (player) player.justForFun = data.justForFun === true;
+                }
+                clearPendingResults();
+                updateResultSettings();
+            }
+            return true;
+        }
         if(data.type==='room_mode_updated'||data.scope==='room-mode'){
             if(pendingMode?.id===data.requestId)pendingMode.finish(data.type==='error'?data.message||'Could not change the play mode.':undefined);
             return true;
@@ -180,10 +278,19 @@ export function createRoomSettings(context: AppContext) {
         }
         return false;
     }
-    function disposeRoomSettings() {if (timer) clearInterval(timer);clearChange();pendingMode?.finish('Reconnect to change the play mode.');timer = null;pendingAt = 0;S.joinChallenge = null;}
+    function disposeRoomSettings() {if (timer) clearInterval(timer);clearChange();clearPendingResults();pendingMode?.finish('Reconnect to change the play mode.');timer = null;pendingAt = 0;S.joinChallenge = null;}
     return {joinVerificationMarkup, updateRoomSettings, receiveRoomSettings, disposeRoomSettings,
-        actions: {'room-settings': roomSettings,'room-two-step':openVerification,'room-play-mode':openPlayMode},
+        actions: {'room-settings': roomSettings,'room-two-step':openVerification,'room-play-mode':openPlayMode,'room-just-for-fun':openResultSettings},
+        inputs: [event => {
+            if (!(event.target instanceof HTMLInputElement) || event.target.id !== 'room-result-player-search') return false;
+            updateResultSettings();
+            return true;
+        }],
         forms: {'room-mode-form':{submit:savePlayMode,errorTarget:'#room-mode-error'}}, changes: [event => {
+        if (event.target instanceof HTMLInputElement && event.target.dataset.resultPlayer) {
+            saveResultPlayer(event.target.dataset.resultPlayer, event.target.checked);
+            return true;
+        }
         if (event.target instanceof HTMLSelectElement && event.target.id === 'room-game-reveal') {
             if (S.room?.role === 'host' && S.roomState?.settings?.game) {
                 const mode = event.target.value;
